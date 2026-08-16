@@ -23,7 +23,7 @@ TEST(MutexQueueStress, ChecksumReconcilesAcrossProducersAndConsumers) {
 
   MutexQueue<std::uint64_t> q(kQueueCapacity);
 
-  auto producers = spawn_threads(kProducers, [&q](int p) {
+  auto producers = testing::spawn_threads(kProducers, [&q](int p) {
     // Assert only on failure: a per-item ASSERT is measurable under TSan.
     for (int i = 0; i < kItemsPerProducer; ++i) {
       const auto value =
@@ -37,7 +37,7 @@ TEST(MutexQueueStress, ChecksumReconcilesAcrossProducersAndConsumers) {
 
   std::atomic<std::uint64_t> consumed_sum{0};
   std::atomic<std::uint64_t> consumed_count{0};
-  auto consumers = spawn_threads(kConsumers, [&](int /*c*/) {
+  auto consumers = testing::spawn_threads(kConsumers, [&](int /*c*/) {
     std::uint64_t local_sum = 0;
     std::uint64_t local_count = 0;
     std::uint64_t value = 0;
@@ -49,9 +49,9 @@ TEST(MutexQueueStress, ChecksumReconcilesAcrossProducersAndConsumers) {
     consumed_count.fetch_add(local_count, std::memory_order_relaxed);
   });
 
-  join_all(producers);
-  q.close();  // all items in; wake the consumers so they drain and exit
-  join_all(consumers);
+  producers.clear();  // joins every producer: all items are in
+  q.close();          // wake the consumers so they drain and exit
+  consumers.clear();  // joins every consumer: all items are out
 
   // Sum of 1..kTotalItems: each producer p pushes the contiguous block
   // [p*kItems+1, (p+1)*kItems].

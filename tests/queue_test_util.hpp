@@ -11,7 +11,7 @@
 
 #include <gtest/gtest.h>
 
-namespace cq {
+namespace cq::testing {
 
 // Long enough for a spawned thread to reach its blocking call; the tests stay
 // correct (just less interesting) if it ever proves too short.
@@ -28,24 +28,16 @@ constexpr auto kSettleTime = std::chrono::milliseconds(5);
 }
 
 // Launches count threads, each running body(thread_index). Hold the returned
-// vector: dropping it joins every thread immediately.
+// vector: destroying it (scope exit, or clear()) joins every thread.
 [[nodiscard]] std::vector<std::jthread> spawn_threads(int count, auto body) {
   std::vector<std::jthread> threads;
   threads.reserve(static_cast<std::size_t>(count));
   for (int i = 0; i < count; ++i) {
-    threads.emplace_back([body, i] { body(i); });
+    threads.emplace_back(body, i);
   }
   return threads;
 }
 
-// inline: unlike the auto-parameter helpers above this is not a template, and
-// the header is included from more than one TU.
-inline void join_all(std::vector<std::jthread>& threads) {
-  for (auto& t : threads) {
-    t.join();
-  }
-}
-
-}  // namespace cq
+}  // namespace cq::testing
 
 #endif  // CQ_TESTS_QUEUE_TEST_UTIL_HPP_

@@ -11,8 +11,6 @@ namespace cq {
 /// v1 baseline: bounded FIFO ring guarded by a single std::mutex, with
 /// not_full / not_empty condition variables and close() shutdown semantics.
 ///
-/// - push()/pop() block; try_push()/try_pop() never block.
-///
 /// Thread-safety: after construction, all member functions may be called
 /// concurrently from any number of producer and consumer threads. closed()
 /// and size() return advisory snapshots — drive control flow off the

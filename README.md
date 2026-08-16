@@ -37,7 +37,12 @@ cmake --build build-tsan && ctest --test-dir build-tsan --output-on-failure
 
 # benchmarks (Release, no sanitizers)
 cmake -B build-rel -DCMAKE_BUILD_TYPE=Release
-cmake --build build-rel && ./build-rel/queue_bench --benchmark_repetitions=10
+cmake --build build-rel && ./build-rel/bench/queue_bench --benchmark_repetitions=10
+
+# lint (same file sets CI checks; CI pins version 18, so match it locally
+# — a different major version formats differently and CI will disagree)
+git ls-files '*.hpp' '*.ipp' '*.cpp' | xargs clang-format --dry-run --Werror
+git ls-files '*.cpp' | xargs clang-tidy -p build-rel
 ```
 
 ## Correctness policy
@@ -50,4 +55,31 @@ cmake --build build-rel && ./build-rel/queue_bench --benchmark_repetitions=10
 
 ## Results
 
-_To be filled in as v1 → v3 land._
+Machine: Apple M2 Pro (12 cores), 32 GB, macOS 26. Release build,
+`--benchmark_repetitions=10` (each run is `MinTime` 1s, set on the benchmark).
+The machine was not idle — load average ~4.6 — so treat these as a floor.
+
+An **op** is one `push` or one `pop`, so transferring an item costs two ops;
+this is the unit Google Benchmark prints as `items_per_second`.
+
+| Benchmark (v1 MutexQueue) | Throughput | Per-op | CV |
+|---|---|---|---|
+| single-thread push+pop round trip | 105.1M ± 0.7M ops/s | 19.1 ns per round trip | 2.2% |
+| SPSC (1 producer, 1 consumer) | 35.7M ± 0.5M ops/s | 56.0 ns | 1.4% |
+| MPMC (4 producers, 4 consumers) | 21.6M ± 0.1M ops/s | 370.3 ns | 0.5% |
+
+The v1 story in one line: one mutex serializes everything, so **threads never
+buy throughput** — the uncontended round trip moves ops ~3× faster than two
+threads managing it, and going from 2 threads to 8 loses a further ~40%
+(1.65× slower). That is the baseline v2's lock-free ring has to beat.
+
+Two caveats on reading these numbers. First, v1 notifies its condition
+variables on every op, even when no thread is waiting: a variant that keeps
+waiter counts and skips the no-op notify measures ~20% faster on MPMC and
+~26–37% faster on SPSC (the uncontended round trip is unchanged). This
+baseline is deliberately the *simple* single-mutex design, not the fastest
+one — worth remembering before crediting v2 with the whole gap. Second, the
+numbers above are ops/s; halve them for items transferred per second
+(SPSC ≈ 17.9M items/s, MPMC ≈ 10.8M).
+
+_v2 → v3 to follow._

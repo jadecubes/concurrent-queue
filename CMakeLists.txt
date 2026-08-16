@@ -41,6 +41,13 @@ endif()
 include(FetchContent)
 enable_testing()
 
+# Sanitizer builds are test-only: benchmark numbers from an instrumented build
+# are meaningless. Say so rather than silently producing no benchmark targets.
+if(ENABLE_TSAN AND CQ_BUILD_BENCHMARKS)
+  message(STATUS "ENABLE_TSAN is on: disabling benchmarks (timings under TSan are meaningless)")
+  set(CQ_BUILD_BENCHMARKS OFF)
+endif()
+
 if(CQ_BUILD_TESTS)
   FetchContent_Declare(
     googletest
@@ -53,7 +60,7 @@ if(CQ_BUILD_TESTS)
   add_subdirectory(tests)
 endif()
 
-if(CQ_BUILD_BENCHMARKS AND NOT ENABLE_TSAN)
+if(CQ_BUILD_BENCHMARKS)
   FetchContent_Declare(
     benchmark
     URL https://github.com/google/benchmark/archive/refs/tags/v1.9.1.tar.gz

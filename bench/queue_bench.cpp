@@ -6,9 +6,10 @@
 // balance and the harness keeps full control of run length. Reported items/s
 // is total queue ops per second (a push and its pop count as two).
 //
-// Thread spawn and the start barrier sit inside the timed region, so a
-// min_time well above that (~50ms) is required for meaningful numbers:
-// Run: ./queue_bench --benchmark_min_time=1s --benchmark_repetitions=10
+// Threads synchronize on Google Benchmark's start barrier before timing
+// resumes, so spawn cost is outside the timed region. The registrations below
+// set MinTime so a bare run is already long enough to be meaningful; add
+// repetitions for a spread: ./queue_bench --benchmark_repetitions=10
 
 #include <cq/mutex_queue.hpp>
 
@@ -68,12 +69,17 @@ constexpr int kSpscThreads = 2;
 constexpr int kMpmcThreads = 8;
 static_assert(kSpscThreads % 2 == 0 && kMpmcThreads % 2 == 0,
               "producer/consumer pairing needs an even thread count");
+// MinTime: contended runs need a second of samples to settle; the ctest smoke
+// run overrides it with --benchmark_min_time=1x.
+constexpr double kMinTimeSeconds = 1.0;
+
 BENCHMARK(BM_MutexQueueThroughput)
     ->Setup(setup_queue)
     ->Teardown(teardown_queue)
     ->Threads(kSpscThreads)
     ->Threads(kMpmcThreads)
     ->UseRealTime()
+    ->MinTime(kMinTimeSeconds)
     ->Name("MutexQueue/throughput");
 
 // Uncontended single-thread round trip: the queue's raw locked cost.
@@ -88,6 +94,8 @@ void BM_MutexQueuePushPopSingleThread(benchmark::State& state) {
   // threaded benchmark so the rates compare directly.
   state.SetItemsProcessed(state.iterations() * 2);
 }
-BENCHMARK(BM_MutexQueuePushPopSingleThread)->Name("MutexQueue/single_thread_roundtrip");
+BENCHMARK(BM_MutexQueuePushPopSingleThread)
+    ->MinTime(kMinTimeSeconds)
+    ->Name("MutexQueue/single_thread_roundtrip");
 
 }  // namespace

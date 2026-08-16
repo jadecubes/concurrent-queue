@@ -75,8 +75,8 @@ TEST(MutexQueue, SupportsMoveOnlyTypes) {
 TEST(MutexQueue, PopBlocksUntilPush) {
   MutexQueue<int> q(1);
   int out = 0;
-  EXPECT_TRUE(run_blocked([&] { return q.pop(out); },  //
-                          [&] { EXPECT_TRUE(q.push(7)); }));
+  EXPECT_TRUE(testing::run_blocked([&] { return q.pop(out); },  //
+                                   [&] { EXPECT_TRUE(q.push(7)); }));
   EXPECT_EQ(out, 7);
 }
 
@@ -84,11 +84,11 @@ TEST(MutexQueue, PushBlocksUntilPopWhenFull) {
   MutexQueue<int> q(1);
   ASSERT_TRUE(q.push(1));
   int out = 0;
-  EXPECT_TRUE(run_blocked([&] { return q.push(2); },
-                          [&] {
-                            EXPECT_TRUE(q.pop(out));
-                            EXPECT_EQ(out, 1);
-                          }));
+  EXPECT_TRUE(testing::run_blocked([&] { return q.push(2); },
+                                   [&] {
+                                     EXPECT_TRUE(q.pop(out));
+                                     EXPECT_EQ(out, 1);
+                                   }));
   ASSERT_TRUE(q.pop(out));
   EXPECT_EQ(out, 2);
 }
@@ -119,15 +119,15 @@ TEST(MutexQueue, PopDrainsRemainingItemsAfterClose) {
 TEST(MutexQueue, CloseWakesBlockedPop) {
   MutexQueue<int> q(1);
   int out = 0;
-  EXPECT_FALSE(run_blocked([&] { return q.pop(out); },  //
-                           [&] { q.close(); }));
+  EXPECT_FALSE(testing::run_blocked([&] { return q.pop(out); },  //
+                                    [&] { q.close(); }));
 }
 
 TEST(MutexQueue, CloseWakesBlockedPush) {
   MutexQueue<int> q(1);
   ASSERT_TRUE(q.push(1));
-  EXPECT_FALSE(run_blocked([&] { return q.push(2); },  //
-                           [&] { q.close(); }));
+  EXPECT_FALSE(testing::run_blocked([&] { return q.push(2); },  //
+                                    [&] { q.close(); }));
 }
 
 }  // namespace
