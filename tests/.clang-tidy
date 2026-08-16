@@ -1,0 +1,5 @@
+---
+InheritParentConfig: true
+# Test-only relaxations: short names (q, p, c) are idiomatic in tests, and
+# GTest's TEST macro expansion inflates cognitive complexity.
+Checks: '-readability-identifier-length,-readability-function-cognitive-complexity'

@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-tsan:
+    name: Tests (ThreadSanitizer, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build-tsan -DENABLE_TSAN=ON -DCMAKE_BUILD_TYPE=Debug
+      - name: Build
+        run: cmake --build build-tsan -j
+      - name: Test
+        run: ctest --test-dir build-tsan --output-on-failure -j "$(getconf _NPROCESSORS_ONLN)"
+
+  bench-build:
+    name: Benchmarks compile (Release)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build-rel -DCMAKE_BUILD_TYPE=Release -DCQ_BUILD_TESTS=OFF
+      - name: Build
+        run: cmake --build build-rel -j
+      - name: Smoke-run benchmarks
+        run: ./build-rel/bench/queue_bench --benchmark_min_time=0.01s
+
+  lint:
+    name: clang-format & clang-tidy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # clang-format and clang-tidy ship preinstalled on ubuntu-latest.
+      - name: clang-format
+        run: find include tests bench \( -name '*.hpp' -o -name '*.ipp' -o -name '*.cpp' \) | xargs clang-format --dry-run --Werror
+      - name: clang-tidy
+        run: |
+          cmake -B build-lint -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          find tests bench -name '*.cpp' | xargs clang-tidy -p build-lint

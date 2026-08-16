@@ -1,0 +1,5 @@
+---
+InheritParentConfig: true
+# The canonical Google Benchmark loop `for (auto _ : state)` trips DeadStores
+# in every benchmark file; suppress it here instead of per-line NOLINTs.
+Checks: '-clang-analyzer-deadcode.DeadStores'

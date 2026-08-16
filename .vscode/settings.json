@@ -1,0 +1,12 @@
+{
+  // Template implementation files are C++ (included from headers).
+  "files.associations": {
+    "*.ipp": "cpp"
+  },
+  // Relayout on save via the repo's .clang-format (Prettier-style).
+  // Works with either the clangd extension or Microsoft's C/C++ extension.
+  "[cpp]": {
+    "editor.formatOnSave": true
+  },
+  "C_Cpp.formatting": "clangFormat"
+}
