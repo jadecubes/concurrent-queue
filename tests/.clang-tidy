@@ -1,4 +1,0 @@
----
-InheritParentConfig: true
-# Test-only relaxation: short names (q, p, c) are idiomatic in tests.
-Checks: '-readability-identifier-length'

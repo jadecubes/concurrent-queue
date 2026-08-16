@@ -38,7 +38,9 @@ endif()
 include(FetchContent)
 enable_testing()
 
-if(CQ_BUILD_TESTS)
+# The tests/ and bench/ sources land in follow-up PRs; each block is a no-op
+# until its directory exists so the build scaffolding can merge first.
+if(CQ_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
   FetchContent_Declare(
     googletest
     URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.tar.gz
@@ -50,7 +52,8 @@ if(CQ_BUILD_TESTS)
   add_subdirectory(tests)
 endif()
 
-if(CQ_BUILD_BENCHMARKS AND NOT ENABLE_TSAN)
+if(CQ_BUILD_BENCHMARKS AND NOT ENABLE_TSAN
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bench/CMakeLists.txt")
   FetchContent_Declare(
     benchmark
     URL https://github.com/google/benchmark/archive/refs/tags/v1.9.1.tar.gz

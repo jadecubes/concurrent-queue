@@ -48,9 +48,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: clang-format
-        run: git ls-files '*.hpp' '*.ipp' '*.cpp' | xargs "clang-format-$CLANG_VERSION" --dry-run --Werror
+        run: git ls-files '*.hpp' '*.ipp' '*.cpp' | xargs -r "clang-format-$CLANG_VERSION" --dry-run --Werror
       - name: clang-tidy
         run: |
           cmake -B build-lint
           git ls-files 'tests/*.cpp' 'bench/*.cpp' |
-            xargs -P "$(getconf _NPROCESSORS_ONLN)" -n1 "clang-tidy-$CLANG_VERSION" -p build-lint
+            xargs -r -P "$(getconf _NPROCESSORS_ONLN)" -n1 "clang-tidy-$CLANG_VERSION" -p build-lint
