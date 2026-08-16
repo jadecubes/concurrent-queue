@@ -18,6 +18,9 @@ MutexQueue<T>::MutexQueue(std::size_t capacity) : buffer_(capacity) {
   }
 }
 
+// Notifications throughout are unconditional (fired even when no thread
+// waits) — deliberate v1 simplicity; the benchmarks measure that cost as
+// part of the baseline.
 template <typename T>
 bool MutexQueue<T>::push(T value) {
   {

@@ -12,14 +12,11 @@ namespace cq {
 /// not_full / not_empty condition variables and close() shutdown semantics.
 ///
 /// - push()/pop() block; try_push()/try_pop() never block.
-/// - close() shuts the queue down; see close() for the full contract.
-///
-/// Notifications are unconditional (fired even when no thread waits) —
-/// deliberate v1 simplicity; the benchmarks measure that cost as part of
-/// the baseline.
 ///
 /// Thread-safety: after construction, all member functions may be called
-/// concurrently from any number of producer and consumer threads.
+/// concurrently from any number of producer and consumer threads. closed()
+/// and size() return advisory snapshots — drive control flow off the
+/// push/pop return values instead.
 ///
 /// Lifetime: the queue must outlive every thread using it — call close()
 /// and join all producers/consumers before destruction. Destroying the
@@ -38,9 +35,8 @@ class MutexQueue {
   /// @throws std::invalid_argument if capacity is 0.
   explicit MutexQueue(std::size_t capacity);
 
-  // Not copyable or movable: blocked producers/consumers hold references to
-  // mutex_ and the condition variables, so the queue needs a stable address.
-  // Share it by reference (or shared_ptr) instead.
+  // Not copyable or movable: waiters hold references to mutex_ and the
+  // condition variables; share the queue by reference instead.
   MutexQueue(const MutexQueue&) = delete;
   MutexQueue& operator=(const MutexQueue&) = delete;
   MutexQueue(MutexQueue&&) = delete;
@@ -72,14 +68,10 @@ class MutexQueue {
   /// what remains.
   void close();
 
-  /// @return true once close() has been called. Advisory snapshot: may be
-  ///   stale by the time it returns; do not build control flow on it — use
-  ///   the return values of push()/pop() instead.
+  /// @return true once close() has been called (advisory snapshot).
   [[nodiscard]] bool closed() const;
 
-  /// @return Current number of queued elements. Advisory snapshot: may be
-  ///   stale by the time it returns; meant for monitoring and tests, not
-  ///   for emptiness/fullness decisions — use try_push()/try_pop().
+  /// @return Current number of queued elements (advisory snapshot).
   [[nodiscard]] std::size_t size() const;
 
   /// @return Fixed capacity set at construction.

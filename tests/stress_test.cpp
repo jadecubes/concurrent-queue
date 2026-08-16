@@ -24,15 +24,15 @@ TEST(MutexQueueStress, ChecksumReconcilesAcrossProducersAndConsumers) {
   MutexQueue<std::uint64_t> q(kQueueCapacity);
 
   auto producers = spawn_threads(kProducers, [&q](int p) {
-    // One assertion per producer, not per item: each ASSERT expands to a full
-    // AssertionResult, which is measurable 25k times per thread under TSan.
-    bool all_pushed = true;
-    for (int i = 0; all_pushed && i < kItemsPerProducer; ++i) {
+    // Assert only on failure: a per-item ASSERT is measurable under TSan.
+    for (int i = 0; i < kItemsPerProducer; ++i) {
       const auto value =
           (static_cast<std::uint64_t>(p) * kItemsPerProducer) + static_cast<std::uint64_t>(i) + 1;
-      all_pushed = q.push(value);
+      if (!q.push(value)) {
+        ADD_FAILURE() << "producer " << p << " push failed at item " << i;
+        break;
+      }
     }
-    EXPECT_TRUE(all_pushed);
   });
 
   std::atomic<std::uint64_t> consumed_sum{0};

@@ -1,8 +1,5 @@
 ---
 InheritParentConfig: true
-CheckOptions:
-  # Test-only relaxation: the short names actually used by these tests
-  # (queue, loop index, thread handle, producer index). Child CheckOptions
-  # replace the parent's value rather than extend it.
-  readability-identifier-length.IgnoredVariableNames: '^(q|i|t)$'
-  readability-identifier-length.IgnoredParameterNames: '^p$'
+# Short names (q, p, i, t, ...) are idiomatic throughout tests; disable the
+# check as directory policy rather than allowlisting each name.
+Checks: '-readability-identifier-length'

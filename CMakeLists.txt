@@ -40,9 +40,6 @@ endif()
 
 include(FetchContent)
 enable_testing()
-# Project-wide: never execute a (possibly TSan-instrumented) test binary at
-# build time just to enumerate tests.
-set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
 
 if(CQ_BUILD_TESTS)
   FetchContent_Declare(
