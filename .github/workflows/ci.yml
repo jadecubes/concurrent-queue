@@ -30,7 +30,7 @@ jobs:
       - name: Build
         run: cmake --build build-tsan
       - name: Test
-        run: ctest --test-dir build-tsan --output-on-failure
+        run: ctest --test-dir build-tsan --output-on-failure --no-tests=error
 
   bench-build:
     name: Benchmarks (Release, smoke-run)
@@ -42,7 +42,7 @@ jobs:
       - name: Build
         run: cmake --build build-rel
       - name: Smoke-run benchmarks
-        run: ctest --test-dir build-rel --output-on-failure
+        run: ctest --test-dir build-rel --output-on-failure --no-tests=error
 
   lint:
     name: clang-format & clang-tidy

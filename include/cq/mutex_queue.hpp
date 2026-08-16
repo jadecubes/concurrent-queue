@@ -12,9 +12,7 @@ namespace cq {
 /// not_full / not_empty condition variables and close() shutdown semantics.
 ///
 /// - push()/pop() block; try_push()/try_pop() never block.
-/// - close() is idempotent and wakes every blocked producer and consumer.
-///   After close(), push() refuses new values; pop() drains what remains,
-///   then returns false.
+/// - close() shuts the queue down; see close() for the full contract.
 ///
 /// Notifications are unconditional (fired even when no thread waits) —
 /// deliberate v1 simplicity; the benchmarks measure that cost as part of
@@ -75,6 +73,8 @@ class MutexQueue {
 
  private:
   // The *_locked helpers require mutex_ to be held by the caller.
+  [[nodiscard]] bool can_enqueue_locked() const;  // open and not full
+  [[nodiscard]] bool can_dequeue_locked() const;  // not empty
   void enqueue_locked(T&& value);
   void dequeue_locked(T& out);
 
