@@ -30,6 +30,7 @@ checked in CI).
 
 - Format: `clang-format -i` (settings live in `.clang-format`). CI rejects
   unformatted code; format-on-save settings are checked in
-  (`.vscode/settings.json`).
+  (`.vscode/settings.json`). CI pins clang-format/clang-tidy **18** — use the
+  same major version locally or formatting may not match.
 - Lint: `clang-tidy -p <build-dir>` (settings live in `.clang-tidy`; every
   build dir exports `compile_commands.json`).

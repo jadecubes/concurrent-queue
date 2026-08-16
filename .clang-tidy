@@ -19,6 +19,8 @@ CheckOptions:
   # Complexity contributed by macro expansion (GTest asserts, etc.) is not
   # the author's complexity.
   readability-function-cognitive-complexity.IgnoreMacros: 'true'
+  # `auto _` is the general placeholder idiom (a language feature in C++26).
+  readability-identifier-length.IgnoredVariableNames: '^_$'
   readability-identifier-naming.ClassCase: CamelCase
   readability-identifier-naming.StructCase: CamelCase
   readability-identifier-naming.EnumCase: CamelCase
