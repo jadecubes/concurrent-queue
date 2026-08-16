@@ -13,6 +13,16 @@
 namespace cq {
 namespace {
 
+// Launches count threads, each running fn(thread_index).
+std::vector<std::jthread> spawn_threads(int count, auto fn) {
+  std::vector<std::jthread> threads;
+  threads.reserve(static_cast<std::size_t>(count));
+  for (int i = 0; i < count; ++i) {
+    threads.emplace_back([fn, i] { fn(i); });
+  }
+  return threads;
+}
+
 TEST(MutexQueueStress, ChecksumReconcilesAcrossProducersAndConsumers) {
   constexpr int kProducers = 4;
   constexpr int kConsumers = 4;
@@ -23,35 +33,27 @@ TEST(MutexQueueStress, ChecksumReconcilesAcrossProducersAndConsumers) {
 
   MutexQueue<std::uint64_t> q(kQueueCapacity);
 
-  std::vector<std::jthread> producers;
-  producers.reserve(kProducers);
-  for (int p = 0; p < kProducers; ++p) {
-    producers.emplace_back([&q, p] {
-      for (int i = 0; i < kItemsPerProducer; ++i) {
-        const auto value =
-            (static_cast<std::uint64_t>(p) * kItemsPerProducer) + static_cast<std::uint64_t>(i) + 1;
-        ASSERT_TRUE(q.push(value));
-      }
-    });
-  }
+  auto producers = spawn_threads(kProducers, [&q](int p) {
+    for (int i = 0; i < kItemsPerProducer; ++i) {
+      const auto value =
+          (static_cast<std::uint64_t>(p) * kItemsPerProducer) + static_cast<std::uint64_t>(i) + 1;
+      ASSERT_TRUE(q.push(value));
+    }
+  });
 
   std::atomic<std::uint64_t> consumed_sum{0};
   std::atomic<std::uint64_t> consumed_count{0};
-  std::vector<std::jthread> consumers;
-  consumers.reserve(kConsumers);
-  for (int c = 0; c < kConsumers; ++c) {
-    consumers.emplace_back([&] {
-      std::uint64_t local_sum = 0;
-      std::uint64_t local_count = 0;
-      std::uint64_t value = 0;
-      while (q.pop(value)) {
-        local_sum += value;
-        ++local_count;
-      }
-      consumed_sum.fetch_add(local_sum, std::memory_order_relaxed);
-      consumed_count.fetch_add(local_count, std::memory_order_relaxed);
-    });
-  }
+  auto consumers = spawn_threads(kConsumers, [&](int /*c*/) {
+    std::uint64_t local_sum = 0;
+    std::uint64_t local_count = 0;
+    std::uint64_t value = 0;
+    while (q.pop(value)) {
+      local_sum += value;
+      ++local_count;
+    }
+    consumed_sum.fetch_add(local_sum, std::memory_order_relaxed);
+    consumed_count.fetch_add(local_count, std::memory_order_relaxed);
+  });
 
   for (auto& t : producers) {
     t.join();

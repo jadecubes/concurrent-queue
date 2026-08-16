@@ -28,7 +28,8 @@ checked in CI).
 
 ## Tooling
 
-- Format: `clang-format -i` (Google style, 100 columns). CI rejects
-  unformatted code; enable format-on-save in your editor
-  (`.vscode/settings.json` is checked in).
-- Lint: `clang-tidy -p <build-dir>` with the checked-in `.clang-tidy`.
+- Format: `clang-format -i` (settings live in `.clang-format`). CI rejects
+  unformatted code; format-on-save settings are checked in
+  (`.vscode/settings.json`).
+- Lint: `clang-tidy -p <build-dir>` (settings live in `.clang-tidy`; every
+  build dir exports `compile_commands.json`).

@@ -9,6 +9,9 @@ option(ENABLE_TSAN "Build with ThreadSanitizer" OFF)
 option(CQ_BUILD_TESTS "Build unit and stress tests" ON)
 option(CQ_BUILD_BENCHMARKS "Build Google Benchmark targets" ON)
 
+# Every build tree gets a compile_commands.json for clangd/clang-tidy.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Header-only library; consumers inherit C++20 via the compile feature.
 add_library(cq INTERFACE)
 add_library(cq::cq ALIAS cq)
@@ -22,15 +25,20 @@ target_compile_options(cq_warnings INTERFACE
   $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wdocumentation>
   $<$<CXX_COMPILER_ID:MSVC>:/W4>)
 
+# Applied only to our own targets: instrumenting the FetchContent deps just
+# slows the build, and TSan still intercepts their pthread-level sync.
+add_library(cq_sanitizers INTERFACE)
 if(ENABLE_TSAN)
-  add_compile_options(-fsanitize=thread -g -fno-omit-frame-pointer)
-  add_link_options(-fsanitize=thread)
+  target_compile_options(cq_sanitizers INTERFACE
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-fsanitize=thread -fno-omit-frame-pointer>)
+  target_link_options(cq_sanitizers INTERFACE
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-fsanitize=thread>)
 endif()
 
 include(FetchContent)
+enable_testing()
 
 if(CQ_BUILD_TESTS)
-  enable_testing()
   FetchContent_Declare(
     googletest
     URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.tar.gz
@@ -42,18 +50,14 @@ if(CQ_BUILD_TESTS)
   add_subdirectory(tests)
 endif()
 
-if(CQ_BUILD_BENCHMARKS)
-  if(ENABLE_TSAN)
-    message(STATUS "ThreadSanitizer build: skipping benchmarks")
-  else()
-    FetchContent_Declare(
-      benchmark
-      URL https://github.com/google/benchmark/archive/refs/tags/v1.9.1.tar.gz
-      URL_HASH SHA256=32131c08ee31eeff2c8968d7e874f3cb648034377dfc32a4c377fa8796d84981
-      DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
-    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-    set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(benchmark)
-    add_subdirectory(bench)
-  endif()
+if(CQ_BUILD_BENCHMARKS AND NOT ENABLE_TSAN)
+  FetchContent_Declare(
+    benchmark
+    URL https://github.com/google/benchmark/archive/refs/tags/v1.9.1.tar.gz
+    URL_HASH SHA256=32131c08ee31eeff2c8968d7e874f3cb648034377dfc32a4c377fa8796d84981
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+  set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(benchmark)
+  add_subdirectory(bench)
 endif()

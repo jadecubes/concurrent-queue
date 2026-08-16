@@ -7,6 +7,5 @@
   // Works with either the clangd extension or Microsoft's C/C++ extension.
   "[cpp]": {
     "editor.formatOnSave": true
-  },
-  "C_Cpp.formatting": "clangFormat"
+  }
 }

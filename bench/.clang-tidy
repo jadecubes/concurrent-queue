@@ -3,3 +3,8 @@ InheritParentConfig: true
 # The canonical Google Benchmark loop `for (auto _ : state)` trips DeadStores
 # in every benchmark file; suppress it here instead of per-line NOLINTs.
 Checks: '-clang-analyzer-deadcode.DeadStores'
+CheckOptions:
+  # Allow the `for (auto _ : state)` benchmark idiom.
+  readability-identifier-length.IgnoredVariableNames: '^_$'
+  # Google Benchmark's BM_PascalCase convention.
+  readability-identifier-naming.FunctionIgnoredRegexp: '^BM_.*'

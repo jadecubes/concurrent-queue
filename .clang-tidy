@@ -16,15 +16,14 @@ Checks: >
 WarningsAsErrors: '*'
 HeaderFilterRegex: 'include/cq/.*'
 CheckOptions:
-  # Allow the `for (auto _ : state)` benchmark idiom.
-  readability-identifier-length.IgnoredVariableNames: '^_$'
+  # Complexity contributed by macro expansion (GTest asserts, etc.) is not
+  # the author's complexity.
+  readability-function-cognitive-complexity.IgnoreMacros: 'true'
   readability-identifier-naming.ClassCase: CamelCase
   readability-identifier-naming.StructCase: CamelCase
   readability-identifier-naming.EnumCase: CamelCase
   readability-identifier-naming.TypeAliasCase: CamelCase
   readability-identifier-naming.FunctionCase: lower_case
-  # Google Benchmark's BM_PascalCase convention.
-  readability-identifier-naming.FunctionIgnoredRegexp: '^BM_.*'
   readability-identifier-naming.VariableCase: lower_case
   readability-identifier-naming.ParameterCase: lower_case
   readability-identifier-naming.PrivateMemberSuffix: '_'

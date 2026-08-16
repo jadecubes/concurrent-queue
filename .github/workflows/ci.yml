@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-tsan:
     name: Tests (ThreadSanitizer, ${{ matrix.os }})
@@ -18,7 +22,7 @@ jobs:
       - name: Configure
         run: cmake -B build-tsan -DENABLE_TSAN=ON -DCMAKE_BUILD_TYPE=Debug
       - name: Build
-        run: cmake --build build-tsan -j
+        run: cmake --build build-tsan -j "$(getconf _NPROCESSORS_ONLN)"
       - name: Test
         run: ctest --test-dir build-tsan --output-on-failure -j "$(getconf _NPROCESSORS_ONLN)"
 
@@ -30,19 +34,23 @@ jobs:
       - name: Configure
         run: cmake -B build-rel -DCMAKE_BUILD_TYPE=Release -DCQ_BUILD_TESTS=OFF
       - name: Build
-        run: cmake --build build-rel -j
+        run: cmake --build build-rel -j "$(getconf _NPROCESSORS_ONLN)"
       - name: Smoke-run benchmarks
-        run: ./build-rel/bench/queue_bench --benchmark_min_time=0.01s
+        run: ctest --test-dir build-rel --output-on-failure
 
   lint:
     name: clang-format & clang-tidy
     runs-on: ubuntu-latest
+    env:
+      # Pinned so a runner-image rollover can't change the formatting
+      # contract under us; bump deliberately.
+      CLANG_VERSION: 18
     steps:
       - uses: actions/checkout@v4
-      # clang-format and clang-tidy ship preinstalled on ubuntu-latest.
       - name: clang-format
-        run: find include tests bench \( -name '*.hpp' -o -name '*.ipp' -o -name '*.cpp' \) | xargs clang-format --dry-run --Werror
+        run: git ls-files '*.hpp' '*.ipp' '*.cpp' | xargs "clang-format-$CLANG_VERSION" --dry-run --Werror
       - name: clang-tidy
         run: |
-          cmake -B build-lint -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-          find tests bench -name '*.cpp' | xargs clang-tidy -p build-lint
+          cmake -B build-lint
+          git ls-files 'tests/*.cpp' 'bench/*.cpp' |
+            xargs -P "$(getconf _NPROCESSORS_ONLN)" -n1 "clang-tidy-$CLANG_VERSION" -p build-lint
