@@ -29,9 +29,10 @@ std::unique_ptr<cq::MutexQueue<std::uint64_t>> shared_queue;
 void setup_queue(const benchmark::State& /*state*/) {
   shared_queue = std::make_unique<cq::MutexQueue<std::uint64_t>>(kCapacity);
   // Half-full start: neither side begins blocked on a condition variable, so
-  // the measurement starts in steady state.
+  // the measurement starts in steady state. Cannot fail: the queue is fresh
+  // and i stays below capacity.
   for (std::uint64_t i = 0; i < kCapacity / 2; ++i) {
-    shared_queue->try_push(i);
+    (void)shared_queue->try_push(i);
   }
 }
 void teardown_queue(const benchmark::State& /*state*/) { shared_queue.reset(); }

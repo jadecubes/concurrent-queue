@@ -18,8 +18,16 @@ namespace cq {
 /// deliberate v1 simplicity; the benchmarks measure that cost as part of
 /// the baseline.
 ///
-/// Thread-safety: all member functions may be called concurrently from any
-/// number of producer and consumer threads.
+/// Thread-safety: after construction, all member functions may be called
+/// concurrently from any number of producer and consumer threads.
+///
+/// Lifetime: the queue must outlive every thread using it — call close()
+/// and join all producers/consumers before destruction. Destroying the
+/// queue while a thread is blocked in push()/pop() is undefined behavior.
+///
+/// Exceptions: if T's move assignment throws, the failing push()/try_push()
+/// enqueues nothing and the failing pop()/try_pop() leaves the element
+/// queued — the queue itself stays consistent.
 ///
 /// @tparam T Element type. Must be DefaultConstructible (ring slots are
 ///   constructed up front) and MoveAssignable.
@@ -41,32 +49,37 @@ class MutexQueue {
   /// Enqueues a value, blocking while the queue is full.
   /// @param value Element to enqueue; consumed even when the push fails.
   /// @return false if the queue is closed (the value is dropped).
-  bool push(T value);
+  [[nodiscard]] bool push(T value);
 
   /// Enqueues a value without blocking.
   /// @param value Element to enqueue; consumed even when the push fails.
   /// @return false if the queue is full or closed.
-  bool try_push(T value);
+  [[nodiscard]] bool try_push(T value);
 
   /// Dequeues into out, blocking while the queue is empty and open.
   /// @param[out] out Receives the dequeued element on success.
   /// @return false once the queue is closed and drained.
-  bool pop(T& out);
+  [[nodiscard]] bool pop(T& out);
 
   /// Dequeues into out without blocking.
-  /// @param[out] out Receives the dequeued element on success.
+  /// @param[out] out Receives the dequeued element on success; untouched on
+  ///   failure.
   /// @return false if the queue is empty.
-  bool try_pop(T& out);
+  [[nodiscard]] bool try_pop(T& out);
 
   /// Closes the queue and wakes all blocked producers and consumers.
   /// Idempotent. After close(), push() refuses new values; pop() drains
   /// what remains.
   void close();
 
-  /// @return true once close() has been called.
+  /// @return true once close() has been called. Advisory snapshot: may be
+  ///   stale by the time it returns; do not build control flow on it — use
+  ///   the return values of push()/pop() instead.
   [[nodiscard]] bool closed() const;
 
-  /// @return Current number of queued elements.
+  /// @return Current number of queued elements. Advisory snapshot: may be
+  ///   stale by the time it returns; meant for monitoring and tests, not
+  ///   for emptiness/fullness decisions — use try_push()/try_pop().
   [[nodiscard]] std::size_t size() const;
 
   /// @return Fixed capacity set at construction.
