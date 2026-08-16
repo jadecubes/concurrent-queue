@@ -4,5 +4,5 @@ add_executable(queue_tests
 target_link_libraries(queue_tests PRIVATE cq::cq cq_warnings cq_sanitizers GTest::gtest_main)
 
 include(GoogleTest)
-# Discovery mode is set project-wide (PRE_TEST) in the root CMakeLists.
+# 60s: TSan-instrumented binaries take ~0.25s per process just to start.
 gtest_discover_tests(queue_tests DISCOVERY_TIMEOUT 60)

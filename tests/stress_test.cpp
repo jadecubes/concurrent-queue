@@ -24,11 +24,15 @@ TEST(MutexQueueStress, ChecksumReconcilesAcrossProducersAndConsumers) {
   MutexQueue<std::uint64_t> q(kQueueCapacity);
 
   auto producers = spawn_threads(kProducers, [&q](int p) {
-    for (int i = 0; i < kItemsPerProducer; ++i) {
+    // One assertion per producer, not per item: each ASSERT expands to a full
+    // AssertionResult, which is measurable 25k times per thread under TSan.
+    bool all_pushed = true;
+    for (int i = 0; all_pushed && i < kItemsPerProducer; ++i) {
       const auto value =
           (static_cast<std::uint64_t>(p) * kItemsPerProducer) + static_cast<std::uint64_t>(i) + 1;
-      ASSERT_TRUE(q.push(value));
+      all_pushed = q.push(value);
     }
+    EXPECT_TRUE(all_pushed);
   });
 
   std::atomic<std::uint64_t> consumed_sum{0};
@@ -45,13 +49,9 @@ TEST(MutexQueueStress, ChecksumReconcilesAcrossProducersAndConsumers) {
     consumed_count.fetch_add(local_count, std::memory_order_relaxed);
   });
 
-  for (auto& t : producers) {
-    t.join();
-  }
-  q.close();
-  for (auto& t : consumers) {
-    t.join();
-  }
+  join_all(producers);
+  q.close();  // all items in; wake the consumers so they drain and exit
+  join_all(consumers);
 
   // Sum of 1..kTotalItems: each producer p pushes the contiguous block
   // [p*kItems+1, (p+1)*kItems].

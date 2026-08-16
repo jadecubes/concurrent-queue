@@ -4,9 +4,11 @@
 // of the threads produce, the second half consume, one queue op per benchmark
 // iteration. Every thread runs the same iteration count, so pushes and pops
 // balance and the harness keeps full control of run length. Reported items/s
-// is the end-to-end transfer rate through the queue.
+// is total queue ops per second (a push and its pop count as two).
 //
-// Run: ./queue_bench --benchmark_repetitions=10
+// Thread spawn and the start barrier sit inside the timed region, so a
+// min_time well above that (~50ms) is required for meaningful numbers:
+// Run: ./queue_bench --benchmark_min_time=1s --benchmark_repetitions=10
 
 #include <cq/mutex_queue.hpp>
 
@@ -26,6 +28,11 @@ std::unique_ptr<cq::MutexQueue<std::uint64_t>> shared_queue;
 
 void setup_queue(const benchmark::State& /*state*/) {
   shared_queue = std::make_unique<cq::MutexQueue<std::uint64_t>>(kCapacity);
+  // Half-full start: neither side begins blocked on a condition variable, so
+  // the measurement starts in steady state.
+  for (std::uint64_t i = 0; i < kCapacity / 2; ++i) {
+    shared_queue->try_push(i);
+  }
 }
 void teardown_queue(const benchmark::State& /*state*/) { shared_queue.reset(); }
 
@@ -42,15 +49,15 @@ void BM_MutexQueueThroughput(benchmark::State& state) {
     for (auto _ : state) {
       benchmark::DoNotOptimize(queue.push(item++));
     }
-    // Count the producer side only: Google Benchmark sums the counter across
-    // threads, and each item passes through one producer and one consumer.
-    state.SetItemsProcessed(state.iterations());
   } else {
     std::uint64_t value = 0;
     for (auto _ : state) {
       benchmark::DoNotOptimize(queue.pop(value));
     }
   }
+  // Every thread reports its op count, matching the items/s definition in the
+  // file header. Reporting from a subset of threads skews the computed rate.
+  state.SetItemsProcessed(state.iterations());
 }
 
 // SPSC: 1 producer + 1 consumer; MPMC: 4 + 4. Google Benchmark appends the
