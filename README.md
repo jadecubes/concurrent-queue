@@ -67,7 +67,7 @@ the whole queue, not per-thread latency.
 
 | Benchmark (v1 MutexQueue) | Throughput | Per op | CV |
 |---|---|---|---|
-| single-thread push+pop round trip | 105.1M ± 0.7M ops/s | 9.5 ns (19.1 ns per round trip) | 2.2% |
+| single-thread push+pop round trip | 105.1M ± 0.7M ops/s | 9.5 ns (19.0 ns per round trip) | 2.2% |
 | SPSC (1 producer, 1 consumer) | 35.7M ± 0.5M ops/s | 28.0 ns | 1.4% |
 | MPMC (4 producers, 4 consumers) | 21.6M ± 0.1M ops/s | 46.3 ns | 0.5% |
 

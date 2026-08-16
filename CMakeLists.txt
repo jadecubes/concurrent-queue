@@ -9,8 +9,10 @@ option(ENABLE_TSAN "Build with ThreadSanitizer" OFF)
 option(CQ_BUILD_TESTS "Build unit and stress tests" ON)
 
 # Timings from a sanitized build are meaningless, so benchmarks are forced off
-# under TSan. Expressed as a dependent option so the cache reports what was
-# actually built (a plain set() would leave ON showing in ccmake/cmake-gui).
+# under TSan, and the user's choice is restored when TSan is turned back off.
+# The option is hidden from ccmake/cmake-gui while forced (an explicitly passed
+# -DCQ_BUILD_BENCHMARKS=ON is kept as an INTERNAL cache entry), so the STATUS
+# line below — not the cache — is the signal that benchmarks were skipped.
 include(CMakeDependentOption)
 cmake_dependent_option(CQ_BUILD_BENCHMARKS "Build Google Benchmark targets" ON
   "NOT ENABLE_TSAN" OFF)
