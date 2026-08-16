@@ -33,7 +33,7 @@ jobs:
         run: ctest --test-dir build-tsan --output-on-failure
 
   bench-build:
-    name: Benchmarks compile (Release)
+    name: Benchmarks (Release, smoke-run)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
