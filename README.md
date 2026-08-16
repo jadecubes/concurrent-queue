@@ -62,11 +62,14 @@ The machine was not idle — load average ~4.6 — so treat these as a floor.
 An **op** is one `push` or one `pop`, so transferring an item costs two ops;
 this is the unit Google Benchmark prints as `items_per_second`.
 
-| Benchmark (v1 MutexQueue) | Throughput | Per-op | CV |
+Per-op figures below are `1 / throughput` — the aggregate cost of one op across
+the whole queue, not per-thread latency.
+
+| Benchmark (v1 MutexQueue) | Throughput | Per op | CV |
 |---|---|---|---|
-| single-thread push+pop round trip | 105.1M ± 0.7M ops/s | 19.1 ns per round trip | 2.2% |
-| SPSC (1 producer, 1 consumer) | 35.7M ± 0.5M ops/s | 56.0 ns | 1.4% |
-| MPMC (4 producers, 4 consumers) | 21.6M ± 0.1M ops/s | 370.3 ns | 0.5% |
+| single-thread push+pop round trip | 105.1M ± 0.7M ops/s | 9.5 ns (19.1 ns per round trip) | 2.2% |
+| SPSC (1 producer, 1 consumer) | 35.7M ± 0.5M ops/s | 28.0 ns | 1.4% |
+| MPMC (4 producers, 4 consumers) | 21.6M ± 0.1M ops/s | 46.3 ns | 0.5% |
 
 The v1 story in one line: one mutex serializes everything, so **threads never
 buy throughput** — the uncontended round trip moves ops ~3× faster than two

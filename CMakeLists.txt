@@ -7,7 +7,16 @@ project(concurrent_queue
 
 option(ENABLE_TSAN "Build with ThreadSanitizer" OFF)
 option(CQ_BUILD_TESTS "Build unit and stress tests" ON)
-option(CQ_BUILD_BENCHMARKS "Build Google Benchmark targets" ON)
+
+# Timings from a sanitized build are meaningless, so benchmarks are forced off
+# under TSan. Expressed as a dependent option so the cache reports what was
+# actually built (a plain set() would leave ON showing in ccmake/cmake-gui).
+include(CMakeDependentOption)
+cmake_dependent_option(CQ_BUILD_BENCHMARKS "Build Google Benchmark targets" ON
+  "NOT ENABLE_TSAN" OFF)
+if(ENABLE_TSAN)
+  message(STATUS "ENABLE_TSAN is on: benchmarks disabled (timings under a sanitizer are meaningless)")
+endif()
 
 # Every build tree gets a compile_commands.json for clangd/clang-tidy.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -40,13 +49,6 @@ endif()
 
 include(FetchContent)
 enable_testing()
-
-# Sanitizer builds are test-only: benchmark numbers from an instrumented build
-# are meaningless. Say so rather than silently producing no benchmark targets.
-if(ENABLE_TSAN AND CQ_BUILD_BENCHMARKS)
-  message(STATUS "ENABLE_TSAN is on: disabling benchmarks (timings under TSan are meaningless)")
-  set(CQ_BUILD_BENCHMARKS OFF)
-endif()
 
 if(CQ_BUILD_TESTS)
   FetchContent_Declare(

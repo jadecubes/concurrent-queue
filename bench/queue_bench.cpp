@@ -69,8 +69,10 @@ constexpr int kSpscThreads = 2;
 constexpr int kMpmcThreads = 8;
 static_assert(kSpscThreads % 2 == 0 && kMpmcThreads % 2 == 0,
               "producer/consumer pairing needs an even thread count");
-// MinTime: contended runs need a second of samples to settle; the ctest smoke
-// run overrides it with --benchmark_min_time=1x.
+// MinTime: contended runs need a second of samples to settle. Setting it here
+// beats the flag's seconds form — ComputeMinTime prefers a non-zero registered
+// min_time — so --benchmark_min_time=0.2s is accepted and ignored. Only the
+// iteration form overrides, which is what the ctest smoke run uses (1x).
 constexpr double kMinTimeSeconds = 1.0;
 
 BENCHMARK(BM_MutexQueueThroughput)

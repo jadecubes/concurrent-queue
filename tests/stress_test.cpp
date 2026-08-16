@@ -23,7 +23,7 @@ TEST(MutexQueueStress, ChecksumReconcilesAcrossProducersAndConsumers) {
 
   MutexQueue<std::uint64_t> q(kQueueCapacity);
 
-  auto producers = testing::spawn_threads(kProducers, [&q](int p) {
+  auto producers = test_util::spawn_threads(kProducers, [&q](int p) {
     // Assert only on failure: a per-item ASSERT is measurable under TSan.
     for (int i = 0; i < kItemsPerProducer; ++i) {
       const auto value =
@@ -37,7 +37,7 @@ TEST(MutexQueueStress, ChecksumReconcilesAcrossProducersAndConsumers) {
 
   std::atomic<std::uint64_t> consumed_sum{0};
   std::atomic<std::uint64_t> consumed_count{0};
-  auto consumers = testing::spawn_threads(kConsumers, [&](int /*c*/) {
+  auto consumers = test_util::spawn_threads(kConsumers, [&](int /*c*/) {
     std::uint64_t local_sum = 0;
     std::uint64_t local_count = 0;
     std::uint64_t value = 0;

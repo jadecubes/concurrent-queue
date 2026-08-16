@@ -11,7 +11,7 @@
 
 #include <gtest/gtest.h>
 
-namespace cq::testing {
+namespace cq::test_util {
 
 // Long enough for a spawned thread to reach its blocking call; the tests stay
 // correct (just less interesting) if it ever proves too short.
@@ -38,6 +38,6 @@ constexpr auto kSettleTime = std::chrono::milliseconds(5);
   return threads;
 }
 
-}  // namespace cq::testing
+}  // namespace cq::test_util
 
 #endif  // CQ_TESTS_QUEUE_TEST_UTIL_HPP_
