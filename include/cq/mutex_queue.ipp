@@ -22,7 +22,7 @@ template <typename T>
 bool MutexQueue<T>::push(T value) {
   {
     std::unique_lock lock(mutex_);
-    not_full_.wait(lock, [&] { return closed_ || can_enqueue_locked(); });
+    not_full_.wait(lock, [&] { return closed_ || size_ < buffer_.size(); });
     if (closed_) {
       return false;
     }
@@ -36,7 +36,7 @@ template <typename T>
 bool MutexQueue<T>::try_push(T value) {
   {
     const std::lock_guard lock(mutex_);
-    if (!can_enqueue_locked()) {
+    if (closed_ || size_ == buffer_.size()) {
       return false;
     }
     enqueue_locked(std::move(value));
@@ -49,8 +49,8 @@ template <typename T>
 bool MutexQueue<T>::pop(T& out) {
   {
     std::unique_lock lock(mutex_);
-    not_empty_.wait(lock, [&] { return closed_ || can_dequeue_locked(); });
-    if (!can_dequeue_locked()) {
+    not_empty_.wait(lock, [&] { return closed_ || size_ > 0; });
+    if (size_ == 0) {
       return false;  // closed and drained
     }
     dequeue_locked(out);
@@ -63,7 +63,7 @@ template <typename T>
 bool MutexQueue<T>::try_pop(T& out) {
   {
     const std::lock_guard lock(mutex_);
-    if (!can_dequeue_locked()) {
+    if (size_ == 0) {
       return false;
     }
     dequeue_locked(out);
@@ -76,7 +76,9 @@ template <typename T>
 void MutexQueue<T>::close() {
   {
     const std::lock_guard lock(mutex_);
-    closed_ = true;
+    if (std::exchange(closed_, true)) {
+      return;  // already closed; waiters were woken the first time
+    }
   }
   not_full_.notify_all();
   not_empty_.notify_all();
@@ -98,16 +100,6 @@ std::size_t MutexQueue<T>::size() const {
 template <typename T>
 std::size_t MutexQueue<T>::capacity() const {
   return buffer_.size();
-}
-
-template <typename T>
-bool MutexQueue<T>::can_enqueue_locked() const {
-  return !closed_ && size_ < buffer_.size();
-}
-
-template <typename T>
-bool MutexQueue<T>::can_dequeue_locked() const {
-  return size_ > 0;
 }
 
 template <typename T>

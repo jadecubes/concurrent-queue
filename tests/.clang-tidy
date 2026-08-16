@@ -1,4 +1,8 @@
 ---
 InheritParentConfig: true
-# Test-only relaxation: short names (q, p, c) are idiomatic in tests.
-Checks: '-readability-identifier-length'
+CheckOptions:
+  # Test-only relaxation: these short names are idiomatic in tests (queue,
+  # producer/consumer indices, thread handles). Child CheckOptions replace the
+  # parent's value, so `_` is re-listed.
+  readability-identifier-length.IgnoredVariableNames: '^(_|q|p|c|i|t)$'
+  readability-identifier-length.IgnoredParameterNames: '^(p|c|i)$'

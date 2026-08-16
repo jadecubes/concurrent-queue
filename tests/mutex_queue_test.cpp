@@ -2,30 +2,15 @@
 
 #include <cq/mutex_queue.hpp>
 
-#include <chrono>
 #include <memory>
 #include <stdexcept>
-#include <thread>
 
 #include <gtest/gtest.h>
 
+#include "queue_test_util.hpp"
+
 namespace cq {
 namespace {
-
-// Long enough for a spawned thread to reach its blocking call; the tests stay
-// correct (just less interesting) if it ever proves too short.
-constexpr auto kSettleTime = std::chrono::milliseconds(20);
-
-// Runs blocked_op on its own thread, gives it kSettleTime to reach its
-// blocking call, runs unblock, and returns blocked_op's result after joining.
-bool run_blocked(auto&& blocked_op, auto&& unblock) {
-  bool result = false;
-  std::jthread worker([&] { result = blocked_op(); });
-  std::this_thread::sleep_for(kSettleTime);
-  unblock();
-  worker.join();
-  return result;
-}
 
 TEST(MutexQueue, StartsEmptyWithGivenCapacity) {
   const MutexQueue<int> q(4);

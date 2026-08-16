@@ -5,23 +5,13 @@
 
 #include <atomic>
 #include <cstdint>
-#include <thread>
-#include <vector>
 
 #include <gtest/gtest.h>
 
+#include "queue_test_util.hpp"
+
 namespace cq {
 namespace {
-
-// Launches count threads, each running fn(thread_index).
-std::vector<std::jthread> spawn_threads(int count, auto fn) {
-  std::vector<std::jthread> threads;
-  threads.reserve(static_cast<std::size_t>(count));
-  for (int i = 0; i < count; ++i) {
-    threads.emplace_back([fn, i] { fn(i); });
-  }
-  return threads;
-}
 
 TEST(MutexQueueStress, ChecksumReconcilesAcrossProducersAndConsumers) {
   constexpr int kProducers = 4;

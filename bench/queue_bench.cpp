@@ -1,8 +1,10 @@
 // Throughput benchmarks for cq::MutexQueue (v1 baseline).
 //
 // Each benchmark uses Google Benchmark's multi-thread support: the first half
-// of the threads produce, the second half consume. Reported items/s is the
-// end-to-end transfer rate through the queue.
+// of the threads produce, the second half consume, one queue op per benchmark
+// iteration. Every thread runs the same iteration count, so pushes and pops
+// balance and the harness keeps full control of run length. Reported items/s
+// is the end-to-end transfer rate through the queue.
 //
 // Run: ./queue_bench --benchmark_repetitions=10
 
@@ -17,7 +19,6 @@
 namespace {
 
 constexpr std::size_t kCapacity = 1024;
-constexpr std::int64_t kItemsPerThreadPair = 100'000;
 
 // Created/destroyed by the Setup/Teardown hooks below, which run once per
 // repetition outside the threaded region.
@@ -28,29 +29,27 @@ void setup_queue(const benchmark::State& /*state*/) {
 }
 void teardown_queue(const benchmark::State& /*state*/) { shared_queue.reset(); }
 
-// state.threads() is 2 * pairs: thread_index [0, pairs) produce, the rest consume.
 void BM_MutexQueueThroughput(benchmark::State& state) {
-  const int pairs = state.threads() / 2;
-  const bool is_producer = state.thread_index() < pairs;
-  auto& queue = *shared_queue;  // hoisted out of the measured loop
-
-  for (auto _ : state) {
-    if (is_producer) {
-      for (std::int64_t i = 0; i < kItemsPerThreadPair; ++i) {
-        benchmark::DoNotOptimize(queue.push(static_cast<std::uint64_t>(i)));
-      }
-    } else {
-      std::uint64_t value = 0;
-      for (std::int64_t i = 0; i < kItemsPerThreadPair; ++i) {
-        benchmark::DoNotOptimize(queue.pop(value));
-      }
-    }
+  if (state.threads() % 2 != 0) {
+    state.SkipWithError("thread count must be even (producer/consumer pairs)");
+    return;
   }
+  const bool is_producer = state.thread_index() < state.threads() / 2;
+  auto& queue = *shared_queue;
 
-  // Count the producer side only: Google Benchmark sums the counter across
-  // threads, and each item passes through one producer and one consumer.
   if (is_producer) {
-    state.SetItemsProcessed(state.iterations() * kItemsPerThreadPair);
+    std::uint64_t item = 0;
+    for (auto _ : state) {
+      benchmark::DoNotOptimize(queue.push(item++));
+    }
+    // Count the producer side only: Google Benchmark sums the counter across
+    // threads, and each item passes through one producer and one consumer.
+    state.SetItemsProcessed(state.iterations());
+  } else {
+    std::uint64_t value = 0;
+    for (auto _ : state) {
+      benchmark::DoNotOptimize(queue.pop(value));
+    }
   }
 }
 

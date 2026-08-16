@@ -12,11 +12,14 @@ option(CQ_BUILD_BENCHMARKS "Build Google Benchmark targets" ON)
 # Every build tree gets a compile_commands.json for clangd/clang-tidy.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Header-only library; consumers inherit C++20 via the compile feature.
+# Header-only library; consumers inherit C++20 via the compile feature and
+# the thread requirement from the library that creates it.
+find_package(Threads REQUIRED)
 add_library(cq INTERFACE)
 add_library(cq::cq ALIAS cq)
 target_include_directories(cq INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(cq INTERFACE cxx_std_20)
+target_link_libraries(cq INTERFACE Threads::Threads)
 
 add_library(cq_warnings INTERFACE)
 target_compile_options(cq_warnings INTERFACE
@@ -37,6 +40,9 @@ endif()
 
 include(FetchContent)
 enable_testing()
+# Project-wide: never execute a (possibly TSan-instrumented) test binary at
+# build time just to enumerate tests.
+set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
 
 if(CQ_BUILD_TESTS)
   FetchContent_Declare(

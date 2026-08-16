@@ -18,7 +18,8 @@ namespace cq {
 /// deliberate v1 simplicity; the benchmarks measure that cost as part of
 /// the baseline.
 ///
-/// Member function definitions live in mutex_queue.ipp, included below.
+/// Thread-safety: all member functions may be called concurrently from any
+/// number of producer and consumer threads.
 ///
 /// @tparam T Element type. Must be DefaultConstructible (ring slots are
 ///   constructed up front) and MoveAssignable.
@@ -73,8 +74,6 @@ class MutexQueue {
 
  private:
   // The *_locked helpers require mutex_ to be held by the caller.
-  [[nodiscard]] bool can_enqueue_locked() const;  // open and not full
-  [[nodiscard]] bool can_dequeue_locked() const;  // not empty
   void enqueue_locked(T&& value);
   void dequeue_locked(T& out);
 
