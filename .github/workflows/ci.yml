@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Single parallelism knob: cmake --build and ctest read these from the
+  # environment, and the lint job reuses it for xargs -P.
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+  CTEST_PARALLEL_LEVEL: 4
+
+jobs:
+  test-tsan:
+    name: Tests (ThreadSanitizer, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build-tsan -DENABLE_TSAN=ON -DCMAKE_BUILD_TYPE=Debug
+      - name: Build
+        run: cmake --build build-tsan
+      - name: Test
+        # --no-tests=error arms itself once tests/ lands; until then the
+        # scaffolding is allowed to no-op.
+        run: ctest --test-dir build-tsan --output-on-failure --no-tests="$([ -d tests ] && echo error || echo ignore)"
+
+  bench-build:
+    name: Benchmarks (Release, smoke-run)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build-rel -DCMAKE_BUILD_TYPE=Release -DCQ_BUILD_TESTS=OFF
+      - name: Build
+        run: cmake --build build-rel
+      - name: Smoke-run benchmarks
+        run: ctest --test-dir build-rel --output-on-failure --no-tests="$([ -d bench ] && echo error || echo ignore)"
+
+  lint:
+    name: clang-format & clang-tidy
+    runs-on: ubuntu-latest
+    env:
+      # Pinned so a runner-image rollover can't change the formatting
+      # contract under us; bump deliberately.
+      CLANG_VERSION: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: clang-format
+        run: git ls-files '*.hpp' '*.ipp' '*.cpp' | xargs -r "clang-format-$CLANG_VERSION" --dry-run --Werror
+      - name: clang-tidy
+        run: |
+          cmake -B build-lint
+          git ls-files '*.cpp' |
+            xargs -r -P "$CMAKE_BUILD_PARALLEL_LEVEL" -n1 "clang-tidy-$CLANG_VERSION" -p build-lint
