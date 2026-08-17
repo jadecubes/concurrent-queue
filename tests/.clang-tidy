@@ -1,0 +1,5 @@
+---
+InheritParentConfig: true
+# Short names (q, p, i, t, ...) are idiomatic throughout tests; disable the
+# check as directory policy rather than allowlisting each name.
+Checks: '-readability-identifier-length'

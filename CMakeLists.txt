@@ -7,16 +7,30 @@ project(concurrent_queue
 
 option(ENABLE_TSAN "Build with ThreadSanitizer" OFF)
 option(CQ_BUILD_TESTS "Build unit and stress tests" ON)
-option(CQ_BUILD_BENCHMARKS "Build Google Benchmark targets" ON)
+
+# Timings from a sanitized build are meaningless, so benchmarks are forced off
+# under TSan, and the user's choice is restored when TSan is turned back off.
+# The option is hidden from ccmake/cmake-gui while forced (an explicitly passed
+# -DCQ_BUILD_BENCHMARKS=ON is kept as an INTERNAL cache entry), so the STATUS
+# line below — not the cache — is the signal that benchmarks were skipped.
+include(CMakeDependentOption)
+cmake_dependent_option(CQ_BUILD_BENCHMARKS "Build Google Benchmark targets" ON
+  "NOT ENABLE_TSAN" OFF)
+if(ENABLE_TSAN)
+  message(STATUS "ENABLE_TSAN is on: benchmarks disabled (timings under a sanitizer are meaningless)")
+endif()
 
 # Every build tree gets a compile_commands.json for clangd/clang-tidy.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Header-only library; consumers inherit C++20 via the compile feature.
+# Header-only library; consumers inherit C++20 and the thread dependency
+# through the INTERFACE properties.
+find_package(Threads REQUIRED)
 add_library(cq INTERFACE)
 add_library(cq::cq ALIAS cq)
 target_include_directories(cq INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(cq INTERFACE cxx_std_20)
+target_link_libraries(cq INTERFACE Threads::Threads)
 
 add_library(cq_warnings INTERFACE)
 target_compile_options(cq_warnings INTERFACE
@@ -38,9 +52,7 @@ endif()
 include(FetchContent)
 enable_testing()
 
-# The tests/ and bench/ sources land in follow-up PRs; each block is a no-op
-# until its directory exists so the build scaffolding can merge first.
-if(CQ_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
+if(CQ_BUILD_TESTS)
   FetchContent_Declare(
     googletest
     URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.tar.gz
@@ -52,8 +64,7 @@ if(CQ_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
   add_subdirectory(tests)
 endif()
 
-if(CQ_BUILD_BENCHMARKS AND NOT ENABLE_TSAN
-   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bench/CMakeLists.txt")
+if(CQ_BUILD_BENCHMARKS)
   FetchContent_Declare(
     benchmark
     URL https://github.com/google/benchmark/archive/refs/tags/v1.9.1.tar.gz
