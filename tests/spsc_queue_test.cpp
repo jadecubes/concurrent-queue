@@ -3,6 +3,8 @@
 
 #include <cq/spsc_queue.hpp>
 
+#include <cstddef>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 
@@ -21,6 +23,13 @@ TEST(SpscQueue, StartsEmptyWithGivenCapacity) {
 }
 
 TEST(SpscQueue, ZeroCapacityThrows) { EXPECT_THROW(SpscQueue<int>(0), std::invalid_argument); }
+
+TEST(SpscQueue, MaxCapacityThrows) {
+  // The ring allocates capacity + 1 slots; SIZE_MAX would wrap that to 0 and
+  // silently construct a broken queue instead of failing to allocate.
+  constexpr auto kMaxCapacity = std::numeric_limits<std::size_t>::max();
+  EXPECT_THROW(SpscQueue<int>{kMaxCapacity}, std::length_error);
+}
 
 TEST(SpscQueue, PopsInFifoOrder) {
   SpscQueue<int> q(4);

@@ -29,7 +29,7 @@ constexpr std::size_t kCapacity = 1024;
 // Created/destroyed by the Setup/Teardown hooks below, which run once per
 // repetition outside the threaded region. One instance per queue type.
 template <typename Queue>
-std::unique_ptr<Queue> shared_queue;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+std::unique_ptr<Queue> shared_queue;
 
 template <typename Queue>
 void setup_queue(const benchmark::State& /*state*/) {

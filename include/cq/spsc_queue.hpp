@@ -3,18 +3,17 @@
 
 #include <atomic>
 #include <cstddef>
-#include <new>
 #include <vector>
 
 namespace cq {
 
 // Pad the producer- and consumer-owned atomics onto separate cache lines so a
 // store on one side does not invalidate the other side's line (false sharing).
-#ifdef __cpp_lib_hardware_interference_size
-inline constexpr std::size_t kCacheLineSize = std::hardware_destructive_interference_size;
-#else
-inline constexpr std::size_t kCacheLineSize = 64;
-#endif
+// A fixed constant rather than std::hardware_destructive_interference_size:
+// that value moves with compiler version and tuning flags (GCC warns about
+// any header use for exactly that reason), and 128 covers both x86-64
+// adjacent-line prefetching and Apple/ARM64 hardware.
+inline constexpr std::size_t kCacheLineSize = 128;
 
 /// v2: bounded FIFO ring for exactly one producer thread and one consumer
 /// thread, synchronized with atomics only — no mutex, no condition variables.
@@ -45,6 +44,8 @@ class SpscQueue {
  public:
   /// @param capacity Fixed number of usable slots; never resized.
   /// @throws std::invalid_argument if capacity is 0.
+  /// @throws std::length_error if capacity + 1 (the ring allocates one extra,
+  ///   permanently empty slot) overflows std::size_t.
   explicit SpscQueue(std::size_t capacity);
 
   // Not copyable or movable: both threads hold references to the same ring;
@@ -95,6 +96,9 @@ class SpscQueue {
   [[nodiscard]] std::size_t capacity() const;
 
  private:
+  // Validates capacity and returns the slot count for the ring (capacity + 1).
+  [[nodiscard]] static std::size_t ring_slots(std::size_t capacity);
+
   [[nodiscard]] std::size_t next(std::size_t index) const;
 
   // Classic Lamport ring: one slot is kept permanently empty so head_ ==

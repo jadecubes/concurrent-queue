@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <limits>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -13,10 +14,18 @@
 namespace cq {
 
 template <typename T>
-SpscQueue<T>::SpscQueue(std::size_t capacity) : buffer_(capacity + 1) {
+SpscQueue<T>::SpscQueue(std::size_t capacity) : buffer_(ring_slots(capacity)) {}
+
+template <typename T>
+std::size_t SpscQueue<T>::ring_slots(std::size_t capacity) {
   if (capacity == 0) {
     throw std::invalid_argument("SpscQueue capacity must be > 0");
   }
+  if (capacity == std::numeric_limits<std::size_t>::max()) {
+    // capacity + 1 would wrap to 0 and construct a broken (empty) ring.
+    throw std::length_error("SpscQueue capacity + 1 overflows std::size_t");
+  }
+  return capacity + 1;
 }
 
 // Synchronization protocol, both directions:
@@ -35,14 +44,15 @@ template <typename T>
 bool SpscQueue<T>::push(T value) {
   const auto tail = tail_.load(std::memory_order_relaxed);
   const auto slot_after = next(tail);
-  while (slot_after == head_.load(std::memory_order_acquire)) {  // full
+  // Wait for a free slot, bailing out if the queue closes first.
+  while (true) {
     if (closed_.load(std::memory_order_relaxed)) {
       return false;
     }
+    if (slot_after != head_.load(std::memory_order_acquire)) {
+      break;
+    }
     std::this_thread::yield();
-  }
-  if (closed_.load(std::memory_order_relaxed)) {
-    return false;
   }
   buffer_[tail] = std::move(value);
   tail_.store(slot_after, std::memory_order_release);
