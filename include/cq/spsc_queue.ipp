@@ -54,21 +54,18 @@ bool SpscQueue<T>::push(T value) {
     }
     std::this_thread::yield();
   }
-  buffer_[tail] = std::move(value);
-  tail_.store(slot_after, std::memory_order_release);
+  enqueue(tail, std::move(value));
   return true;
 }
 
 template <typename T>
 bool SpscQueue<T>::try_push(T value) {
   const auto tail = tail_.load(std::memory_order_relaxed);
-  const auto slot_after = next(tail);
-  if (slot_after == head_.load(std::memory_order_acquire) ||
+  if (next(tail) == head_.load(std::memory_order_acquire) ||
       closed_.load(std::memory_order_relaxed)) {
     return false;  // full or closed
   }
-  buffer_[tail] = std::move(value);
-  tail_.store(slot_after, std::memory_order_release);
+  enqueue(tail, std::move(value));
   return true;
 }
 
@@ -93,9 +90,20 @@ bool SpscQueue<T>::try_pop(T& out) {
   if (head == tail_.load(std::memory_order_acquire)) {
     return false;  // empty
   }
+  dequeue(head, out);
+  return true;
+}
+
+template <typename T>
+void SpscQueue<T>::enqueue(std::size_t tail, T&& value) {
+  buffer_[tail] = std::move(value);
+  tail_.store(next(tail), std::memory_order_release);
+}
+
+template <typename T>
+void SpscQueue<T>::dequeue(std::size_t head, T& out) {
   out = std::move(buffer_[head]);
   head_.store(next(head), std::memory_order_release);
-  return true;
 }
 
 template <typename T>

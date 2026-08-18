@@ -99,6 +99,11 @@ class SpscQueue {
   // Validates capacity and returns the slot count for the ring (capacity + 1).
   [[nodiscard]] static std::size_t ring_slots(std::size_t capacity);
 
+  // The slot write and the index publish that make up one queue op; the
+  // callers decide *whether* to run them (full/empty/closed checks).
+  void enqueue(std::size_t tail, T&& value);
+  void dequeue(std::size_t head, T& out);
+
   [[nodiscard]] std::size_t next(std::size_t index) const;
 
   // Classic Lamport ring: one slot is kept permanently empty so head_ ==
