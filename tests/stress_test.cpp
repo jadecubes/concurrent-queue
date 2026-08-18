@@ -2,6 +2,7 @@
 // values, consumers' totals must reconcile. Run under ThreadSanitizer.
 
 #include <cq/mutex_queue.hpp>
+#include <cq/spsc_queue.hpp>
 
 #include <atomic>
 #include <cstdint>
@@ -58,6 +59,44 @@ TEST(MutexQueueStress, ChecksumReconcilesAcrossProducersAndConsumers) {
   const std::uint64_t expected_sum = kTotalItems * (kTotalItems + 1) / 2;
   EXPECT_EQ(consumed_count.load(), kTotalItems);
   EXPECT_EQ(consumed_sum.load(), expected_sum);
+  EXPECT_EQ(q.size(), 0U);
+}
+
+TEST(SpscQueueStress, ChecksumReconcilesAcrossProducerAndConsumer) {
+  constexpr int kItems = 100'000;
+  constexpr std::uint64_t kTotalItems = kItems;
+  // Much smaller than the item count so the ring wraps and fills constantly.
+  constexpr std::size_t kQueueCapacity = 64;
+
+  SpscQueue<std::uint64_t> q(kQueueCapacity);
+
+  // SPSC contract: exactly one producer thread and one consumer thread.
+  auto producer = test_util::spawn_threads(1, [&q](int /*p*/) {
+    for (std::uint64_t i = 1; i <= kTotalItems; ++i) {
+      if (!q.push(i)) {
+        ADD_FAILURE() << "push failed at item " << i;
+        break;
+      }
+    }
+  });
+
+  std::uint64_t consumed_sum = 0;
+  std::uint64_t consumed_count = 0;
+  auto consumer = test_util::spawn_threads(1, [&](int /*c*/) {
+    std::uint64_t value = 0;
+    while (q.pop(value)) {
+      consumed_sum += value;
+      ++consumed_count;
+    }
+  });
+
+  producer.clear();  // joins the producer: all items are in
+  q.close();         // let the consumer drain and exit
+  consumer.clear();  // joins the consumer: all items are out
+
+  const std::uint64_t expected_sum = kTotalItems * (kTotalItems + 1) / 2;
+  EXPECT_EQ(consumed_count, kTotalItems);
+  EXPECT_EQ(consumed_sum, expected_sum);
   EXPECT_EQ(q.size(), 0U);
 }
 
