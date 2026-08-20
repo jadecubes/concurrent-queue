@@ -18,7 +18,9 @@ inline constexpr std::size_t kCacheLineSize = 128;
 /// v2: bounded FIFO ring for exactly one producer thread and one consumer
 /// thread, synchronized with atomics only — no mutex, no condition variables.
 /// The blocking push()/pop() spin with std::this_thread::yield() instead of
-/// sleeping.
+/// sleeping. Each side caches the peer's index (added in v2.5), so a steady
+/// stream of pushes and pops decides "there is room" / "there is data"
+/// without touching the other core's cache line.
 ///
 /// Thread-safety: at most one thread may call the producer side (push,
 /// try_push) and at most one thread the consumer side (pop, try_pop),
@@ -104,6 +106,15 @@ class SpscQueue {
   void enqueue(std::size_t tail, T&& value);
   void dequeue(std::size_t head, T& out);
 
+  // Would writing at slot_after be safe (producer), and is there anything at
+  // head to read (consumer)? Each checks this side's cached view of the
+  // opposite index first and only re-reads the real one when the cache says
+  // full/empty — that skipped read is the whole point, since it is the one
+  // hot-path access that reaches into the other core's cache line. Neither is
+  // const: both write back the value they refresh.
+  [[nodiscard]] bool has_room(std::size_t slot_after);
+  [[nodiscard]] bool has_data(std::size_t head);
+
   [[nodiscard]] std::size_t next(std::size_t index) const;
 
   // Classic Lamport ring: one slot is kept permanently empty so head_ ==
@@ -112,8 +123,17 @@ class SpscQueue {
   std::vector<T> buffer_;
   // head_ is written only by the consumer, tail_ only by the producer; each
   // side reads the other's index with acquire to see the slots it published.
+  //
+  // Each index shares its cache line with the *_cache_ member belonging to
+  // the same side: that side's last-seen value of the opposite index. Since
+  // both indices only advance and a cache is only ever refreshed from the
+  // real index, a cache lags but never runs ahead — so "cache says not
+  // full/not empty" is always true and the peer's line is never touched.
+  // Only the equal case has to re-read, and may prove a false alarm.
   alignas(kCacheLineSize) std::atomic<std::size_t> head_ = 0;
+  std::size_t tail_cache_ = 0;  // consumer-private view of tail_
   alignas(kCacheLineSize) std::atomic<std::size_t> tail_ = 0;
+  std::size_t head_cache_ = 0;  // producer-private view of head_
   alignas(kCacheLineSize) std::atomic<bool> closed_ = false;
 };
 

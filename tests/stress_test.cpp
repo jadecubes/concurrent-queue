@@ -100,5 +100,42 @@ TEST(SpscQueueStress, ChecksumReconcilesAcrossProducerAndConsumer) {
   EXPECT_EQ(q.size(), 0U);
 }
 
+// A one-slot ring is the tightest interleaving the queue allows: the ring is
+// full after every push and empty after every pop, so neither side's index
+// cache is ever usable and both refresh on every single operation. Far fewer
+// items than the test above, because every one of them is a full handoff.
+TEST(SpscQueueStress, SingleSlotRingHandsOffEveryItem) {
+  constexpr std::uint64_t kTotalItems = 20'000;
+
+  SpscQueue<std::uint64_t> q(1);
+
+  auto producer = test_util::spawn_threads(1, [&q](int /*p*/) {
+    for (std::uint64_t i = 1; i <= kTotalItems; ++i) {
+      if (!q.push(i)) {
+        ADD_FAILURE() << "push failed at item " << i;
+        break;
+      }
+    }
+  });
+
+  std::uint64_t consumed_sum = 0;
+  std::uint64_t consumed_count = 0;
+  auto consumer = test_util::spawn_threads(1, [&](int /*c*/) {
+    std::uint64_t value = 0;
+    while (q.pop(value)) {
+      consumed_sum += value;
+      ++consumed_count;
+    }
+  });
+
+  producer.clear();  // joins the producer: all items are in
+  q.close();         // let the consumer drain and exit
+  consumer.clear();  // joins the consumer: all items are out
+
+  EXPECT_EQ(consumed_count, kTotalItems);
+  EXPECT_EQ(consumed_sum, kTotalItems * (kTotalItems + 1) / 2);
+  EXPECT_EQ(q.size(), 0U);
+}
+
 }  // namespace
 }  // namespace cq
