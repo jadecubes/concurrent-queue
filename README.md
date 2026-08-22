@@ -12,6 +12,9 @@ industrial implementations.
 - **v1 — mutex + condition_variable queue.** Bounded ring storage guarded by a
   `std::mutex`, with `not_full` / `not_empty` condition variables and
   `close()` shutdown semantics. The correctness and performance baseline.
+  Each operation offers three waiting disciplines — wait indefinitely
+  (`push` / `pop`), never wait (`try_push` / `try_pop`), or wait up to a
+  caller-supplied bound (`try_push_for` / `try_pop_for`).
 - **v2 — lock-free SPSC ring buffer with atomics.** Same ring storage, no
   lock. Measure the difference against v1 with Google Benchmark.
 - **v2.5 — bounded MPMC queue** (Vyukov-style, per-slot sequence counters).

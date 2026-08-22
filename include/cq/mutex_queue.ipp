@@ -4,6 +4,7 @@
 #ifndef CQ_MUTEX_QUEUE_IPP_
 #define CQ_MUTEX_QUEUE_IPP_
 
+#include <chrono>
 #include <cstddef>
 #include <mutex>
 #include <stdexcept>
@@ -68,6 +69,45 @@ bool MutexQueue<T>::try_pop(T& out) {
     const std::lock_guard lock(mutex_);
     if (size_ == 0) {
       return false;
+    }
+    dequeue_locked(out);
+  }
+  not_full_.notify_one();
+  return true;
+}
+
+// The timed variants mirror push()/pop() through condition_variable::wait_for.
+// Its predicate overload returns the predicate's final value, so a false
+// result means "the timeout elapsed with the condition still unmet" — which
+// separates a genuine timeout from the closed and drained cases below, and
+// also absorbs spurious wakeups by re-waiting for the remaining time.
+template <typename T>
+template <typename Rep, typename Period>
+bool MutexQueue<T>::try_push_for(T value, const std::chrono::duration<Rep, Period>& timeout) {
+  {
+    std::unique_lock lock(mutex_);
+    if (!not_full_.wait_for(lock, timeout, [&] { return closed_ || size_ < buffer_.size(); })) {
+      return false;  // timed out, still full
+    }
+    if (closed_) {
+      return false;
+    }
+    enqueue_locked(std::move(value));
+  }
+  not_empty_.notify_one();
+  return true;
+}
+
+template <typename T>
+template <typename Rep, typename Period>
+bool MutexQueue<T>::try_pop_for(T& out, const std::chrono::duration<Rep, Period>& timeout) {
+  {
+    std::unique_lock lock(mutex_);
+    if (!not_empty_.wait_for(lock, timeout, [&] { return closed_ || size_ > 0; })) {
+      return false;  // timed out, still empty
+    }
+    if (size_ == 0) {
+      return false;  // closed and drained
     }
     dequeue_locked(out);
   }
