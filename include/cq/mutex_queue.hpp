@@ -75,7 +75,9 @@ class MutexQueue {
   /// @param timeout Longest time to wait. A non-positive timeout makes this
   ///   equivalent to try_push().
   /// @return false if the timeout elapsed with the queue still full, or if
-  ///   the queue is closed (the value is dropped).
+  ///   the queue is closed (the value is dropped). To tell the two apart,
+  ///   check closed(): close() is one-way, so a false from closed() after a
+  ///   failed call reliably means "timed out, worth retrying".
   template <typename Rep, typename Period>
   [[nodiscard]] bool try_push_for(T value, const std::chrono::duration<Rep, Period>& timeout);
 
@@ -88,7 +90,8 @@ class MutexQueue {
   /// @param timeout Longest time to wait. A non-positive timeout makes this
   ///   equivalent to try_pop().
   /// @return false if the timeout elapsed with the queue still empty, or
-  ///   once the queue is closed and drained.
+  ///   once the queue is closed and drained. As with try_push_for(),
+  ///   closed() distinguishes the two.
   template <typename Rep, typename Period>
   [[nodiscard]] bool try_pop_for(T& out, const std::chrono::duration<Rep, Period>& timeout);
 
@@ -110,6 +113,13 @@ class MutexQueue {
   // The *_locked helpers require mutex_ to be held by the caller.
   void enqueue_locked(T&& value);
   void dequeue_locked(T& out);
+
+  // Wait predicates, shared by the blocking and timed variants so the two
+  // cannot drift apart. Both mean "stop waiting", which covers two outcomes
+  // the caller still has to separate: the operation can proceed, or the
+  // queue closed and the caller must give up.
+  [[nodiscard]] bool not_full_or_closed_locked() const;
+  [[nodiscard]] bool not_empty_or_closed_locked() const;
 
   [[nodiscard]] std::size_t next(std::size_t index) const;
 

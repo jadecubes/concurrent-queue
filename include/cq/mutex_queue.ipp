@@ -26,7 +26,7 @@ template <typename T>
 bool MutexQueue<T>::push(T value) {
   {
     std::unique_lock lock(mutex_);
-    not_full_.wait(lock, [&] { return closed_ || size_ < buffer_.size(); });
+    not_full_.wait(lock, [this] { return not_full_or_closed_locked(); });
     if (closed_) {
       return false;
     }
@@ -53,7 +53,7 @@ template <typename T>
 bool MutexQueue<T>::pop(T& out) {
   {
     std::unique_lock lock(mutex_);
-    not_empty_.wait(lock, [&] { return closed_ || size_ > 0; });
+    not_empty_.wait(lock, [this] { return not_empty_or_closed_locked(); });
     if (size_ == 0) {
       return false;  // closed and drained
     }
@@ -86,7 +86,7 @@ template <typename Rep, typename Period>
 bool MutexQueue<T>::try_push_for(T value, const std::chrono::duration<Rep, Period>& timeout) {
   {
     std::unique_lock lock(mutex_);
-    if (!not_full_.wait_for(lock, timeout, [&] { return closed_ || size_ < buffer_.size(); })) {
+    if (!not_full_.wait_for(lock, timeout, [this] { return not_full_or_closed_locked(); })) {
       return false;  // timed out, still full
     }
     if (closed_) {
@@ -103,7 +103,7 @@ template <typename Rep, typename Period>
 bool MutexQueue<T>::try_pop_for(T& out, const std::chrono::duration<Rep, Period>& timeout) {
   {
     std::unique_lock lock(mutex_);
-    if (!not_empty_.wait_for(lock, timeout, [&] { return closed_ || size_ > 0; })) {
+    if (!not_empty_.wait_for(lock, timeout, [this] { return not_empty_or_closed_locked(); })) {
       return false;  // timed out, still empty
     }
     if (size_ == 0) {
@@ -143,6 +143,16 @@ std::size_t MutexQueue<T>::size() const {
 template <typename T>
 std::size_t MutexQueue<T>::capacity() const {
   return buffer_.size();
+}
+
+template <typename T>
+bool MutexQueue<T>::not_full_or_closed_locked() const {
+  return closed_ || size_ < buffer_.size();
+}
+
+template <typename T>
+bool MutexQueue<T>::not_empty_or_closed_locked() const {
+  return closed_ || size_ > 0;
 }
 
 template <typename T>
