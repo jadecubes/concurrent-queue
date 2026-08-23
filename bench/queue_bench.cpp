@@ -10,7 +10,8 @@
 //   - moodycamel::ConcurrentQueue is UNBOUNDED and non-blocking, and is FIFO
 //     only per producer, not across producers. Producers therefore never
 //     block (an advantage the writeup must discount), and the adapter's pop
-//     spins on try_dequeue the way our lock-free queues spin.
+//     spins on try_dequeue with a yield, the usual shape for a non-blocking
+//     consumer.
 //
 // Each benchmark uses Google Benchmark's multi-thread support: the first half
 // of the threads produce, the second half consume, one queue op per benchmark

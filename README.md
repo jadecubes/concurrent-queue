@@ -113,7 +113,8 @@ a discount the table cannot show: it never blocks a producer and never
 promises global FIFO, so part of its lead is bought with a weaker contract,
 not just better engineering. Its design (a sub-queue per producer, so
 producers never contend with each other; consumers rotate across sub-queues)
-is exactly the kind of sharing-avoidance v2.5's cached indices gesture at.
+is sharing-avoidance taken much further than the cached-peer-index
+optimization in flight for our SPSC ring (#4).
 
 **v1 beats TBB's bounded queue under contention** — 1.5× at 2 threads, 1.3×
 at 8 — losing only the uncontended round trip (0.92×). A mechanistic reading
@@ -129,4 +130,4 @@ per-op overhead.
 
 As everywhere above, these are ops/s — halve for items/s.
 
-_The v2/v2.5 SPSC rings join this table when their PRs merge._
+_The SPSC rings (#3, #4) join this table when their PRs merge._
