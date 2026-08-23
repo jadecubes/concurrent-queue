@@ -88,24 +88,25 @@ numbers above are ops/s; halve them for items transferred per second
 ### v2 — SpscQueue (lock-free SPSC ring)
 
 Same machine and harness, measured in one session with v1 re-run alongside
-(load average ~6.9 this time; v1's SPSC figure reproduced at 35.5M ± 0.6M
-ops/s, within noise of the table above — the ratios below use the same-session
-numbers).
+(load average ~4.1; v1's SPSC figure reproduced at 35.8M ± 0.6M ops/s, within
+noise of the table above — the ratios below use the same-session numbers). An
+earlier session on a busier machine recorded 252M ± 55M for the SPSC pair with
+a 21.9% CV; the spread was the tell, and the re-measured figures below replace
+it.
 
 | Benchmark (v2 SpscQueue) | Throughput | Per op | CV |
 |---|---|---|---|
-| single-thread push+pop round trip | 1.78G ± 0.01G ops/s | 0.56 ns (1.12 ns per round trip) | 0.9% |
-| SPSC (1 producer, 1 consumer) | 252M ± 55M ops/s | 4.0 ns | 21.9% |
+| single-thread push+pop round trip | 2.00G ± 0.01G ops/s | 0.50 ns (1.00 ns per round trip) | 0.7% |
+| SPSC (1 producer, 1 consumer) | 369M ± 14M ops/s | 2.7 ns | 3.9% |
 
-The v2 story: dropping the mutex buys **~7× on the SPSC pair** (252M vs 35.5M
-ops/s) and **~19× on the uncontended round trip**, where an op is a handful of
-instructions with no atomic read-modify-write — each side loads the other
-side's index and release-stores its own. The new cost center is the cache
-coherence traffic itself: the same ring that moves 1.78G ops/s on one core
-drops to 252M when producer and consumer sit on different cores and the
-`head_`/`tail_` lines ping-pong between them (that scheduling sensitivity is
-also why the CV jumps to ~22%). Caching the last-seen peer index to skip most
-of those loads is the classic next step, left for a v2.x once the unoptimized
-gap is on record.
+The v2 story: dropping the mutex buys **~10× on the SPSC pair** (369M vs
+35.8M ops/s) and **~19× on the uncontended round trip**, where an op is a
+handful of instructions with no atomic read-modify-write — each side loads the
+other side's index and release-stores its own. The new cost center is the
+cache coherence traffic itself: the same ring that moves 2.00G ops/s on one
+core drops to 369M when producer and consumer sit on different cores and the
+`head_`/`tail_` lines ping-pong between them. Caching the last-seen peer index
+to skip most of those loads is the classic next step, left for a v2.x once the
+unoptimized gap is on record.
 
-_v2.5 → v3 to follow._
+_v2.x → v3 to follow._
