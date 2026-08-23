@@ -18,7 +18,7 @@ inline constexpr std::size_t kCacheLineSize = 128;
 /// v2: bounded FIFO ring for exactly one producer thread and one consumer
 /// thread, synchronized with atomics only — no mutex, no condition variables.
 /// The blocking push()/pop() spin with std::this_thread::yield() instead of
-/// sleeping. Each side caches the peer's index (added in v2.5), so a steady
+/// sleeping. Each side caches the peer's index (added in v2.1), so a steady
 /// stream of pushes and pops decides "there is room" / "there is data"
 /// without touching the other core's cache line.
 ///
@@ -112,8 +112,8 @@ class SpscQueue {
   // full/empty — that skipped read is the whole point, since it is the one
   // hot-path access that reaches into the other core's cache line. Neither is
   // const: both write back the value they refresh.
-  [[nodiscard]] bool has_room(std::size_t slot_after);
-  [[nodiscard]] bool has_data(std::size_t head);
+  [[nodiscard]] bool has_room(std::size_t slot_after) noexcept;
+  [[nodiscard]] bool has_data(std::size_t head) noexcept;
 
   [[nodiscard]] std::size_t next(std::size_t index) const;
 

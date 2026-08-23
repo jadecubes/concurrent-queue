@@ -70,7 +70,9 @@ TEST(SpscQueue, FillsToExactlyCapacity) {
 // A one-slot ring is full after every push and empty after every pop, so each
 // side's cached view of the opposite index is stale on every single operation
 // and has to be refreshed. An implementation that consults its cache but never
-// re-reads the real index deadlocks here on the first try_push.
+// re-reads the real index fails at the first try_pop — its tail cache never
+// learns of the push (the fresh zero cache happens to license the first push,
+// and the blocking variants would spin forever instead of returning false).
 TEST(SpscQueue, SingleSlotRingAlternatesPushAndPop) {
   constexpr int kRoundTrips = 100;
   SpscQueue<int> q(1);

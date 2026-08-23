@@ -108,10 +108,13 @@ also why the CV jumps to ~22%). Caching the last-seen peer index to skip most
 of those loads is the classic next step, left for a v2.x once the unoptimized
 gap is on record.
 
-### v2.5 — cached peer indices
+### v2.1 — cached peer indices
+
+(Numbered v2.1, not v2.5: the roadmap reserves v2.5 for the Vyukov-style
+MPMC queue, and this is the "v2.x" follow-up the section above named.)
 
 Same machine and harness. v2 was rebuilt from its own commit and run
-alternately with v2.5 in one session (load average ~4.9), so both columns come
+alternately with v2.1 in one session (load average ~4.9), so both columns come
 from the same conditions, and v1 ran inside both binaries as a control —
 reproducing within 2% (35.4M vs 36.3M ops/s on SPSC), which is what makes the
 comparison below worth reading.
@@ -123,7 +126,7 @@ Because both indices only ever advance, a cached value that says "not full" /
 line at all, and only a ring that has actually run empty or full pays to
 refresh.
 
-| Benchmark | v2 | v2.5 | change |
+| Benchmark | v2 | v2.1 | change |
 |---|---|---|---|
 | SPSC (1 producer, 1 consumer) | 361.7M ± 10.9M ops/s (5.53 ns, CV 3.0%) | **613.7M ± 6.3M ops/s** (3.26 ns, CV 1.0%) | **1.70× faster** |
 | single-thread push+pop round trip | 2.006G ± 0.005G ops/s (0.998 ns, CV 0.2%) | 1.555G ± 0.005G ops/s (1.29 ns, CV 0.3%) | **0.77× — 23% slower** |
@@ -138,11 +141,11 @@ cache's worst case. A ring with slack — the SPSC benchmark, and any real
 stream — skips nearly all of them. Worth stating plainly rather than quoting
 only the number that flatters the change.
 
-Two corrections to the v2 figures recorded above. v2's SPSC throughput here is
-361.7M ops/s, not the 252M ± 55M in the v2 table: that sample carried a 21.9%
-CV on a busier machine and was simply low. Measured against the same-session
-v1 baseline, **v2 is ~10× v1** rather than the ~7× claimed there, and **v2.5 is
-~17×** (613.7M vs 35.4M ops/s).
+The v2 column here (361.7M ops/s) independently agrees with the re-measured
+figure in the v2 table above (369M ± 14M) — both sessions replaced an early
+noisy sample (252M, CV 21.9%) taken on a busier machine. Against the
+same-session v1 baseline, **v2 is ~10× v1** and **v2.1 is ~17×** (613.7M vs
+35.4M ops/s).
 
 Where the remaining time goes: at 3.26 ns per op the pair is dominated by the
 handoff itself — the producer's release store to `tail_` still has to reach the

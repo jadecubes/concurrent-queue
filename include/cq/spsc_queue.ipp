@@ -40,7 +40,7 @@ std::size_t SpscQueue<T>::ring_slots(std::size_t capacity) {
 // therefore also makes every push that preceded the close visible, which is
 // what lets pop() decide "closed and drained" with one final try_pop.
 //
-// Index caching (v2.5): the acquire load of the peer's index is the one hot-
+// Index caching (v2.1): the acquire load of the peer's index is the one hot-
 // path access that reaches for a cache line the other core owns, and under a
 // steady stream it almost always reports the same thing — plenty of room,
 // plenty of data. So each side keeps a private non-atomic copy of the last
@@ -130,7 +130,7 @@ void SpscQueue<T>::dequeue(std::size_t head, T& out) {
 }
 
 template <typename T>
-bool SpscQueue<T>::has_room(std::size_t slot_after) {
+bool SpscQueue<T>::has_room(std::size_t slot_after) noexcept {
   if (slot_after != head_cache_) {
     return true;  // cached head already proves there is room
   }
@@ -139,7 +139,7 @@ bool SpscQueue<T>::has_room(std::size_t slot_after) {
 }
 
 template <typename T>
-bool SpscQueue<T>::has_data(std::size_t head) {
+bool SpscQueue<T>::has_data(std::size_t head) noexcept {
   if (head != tail_cache_) {
     return true;  // cached tail already proves there is data
   }
