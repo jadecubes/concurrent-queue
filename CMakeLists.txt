@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.24)
+# 3.25 for FetchContent's SYSTEM option: third-party headers are included as
+# system headers so our warning flags don't fire inside them.
+cmake_minimum_required(VERSION 3.25)
 
 project(concurrent_queue
   VERSION 0.1.0
@@ -72,6 +74,24 @@ if(CQ_BUILD_BENCHMARKS)
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
   set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
   set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
-  FetchContent_MakeAvailable(benchmark)
+
+  # The v3 comparison targets (benchmark-only dependencies): moodycamel's
+  # ConcurrentQueue (header-only) and oneTBB's concurrent_bounded_queue.
+  FetchContent_Declare(
+    concurrentqueue
+    URL https://github.com/cameron314/concurrentqueue/archive/refs/tags/v1.0.4.tar.gz
+    URL_HASH SHA256=87fbc9884d60d0d4bf3462c18f4c0ee0a9311d0519341cac7cbd361c885e5281
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SYSTEM)
+  FetchContent_Declare(
+    tbb
+    URL https://github.com/uxlfoundation/oneTBB/archive/refs/tags/v2022.2.0.tar.gz
+    URL_HASH SHA256=f0f78001c8c8edb4bddc3d4c5ee7428d56ae313254158ad1eec49eced57f6a5b
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SYSTEM)
+  set(TBB_TEST OFF CACHE BOOL "" FORCE)
+  set(TBB_STRICT OFF CACHE BOOL "" FORCE)
+
+  FetchContent_MakeAvailable(benchmark concurrentqueue tbb)
   add_subdirectory(bench)
 endif()

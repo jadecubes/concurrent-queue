@@ -88,4 +88,44 @@ one — worth remembering before crediting v2 with the whole gap. Second, the
 numbers above are ops/s; halve them for items transferred per second
 (SPSC ≈ 17.9M items/s, MPMC ≈ 10.8M).
 
-_v2 → v3 to follow._
+### v3 — versus the industry (moodycamel, TBB)
+
+Same machine and harness, one session (load average ~3.7), all three queues in
+one binary; v1's own numbers reproduced within 2% of the table above, which is
+what makes the columns comparable. Contract differences that the numbers must
+be read against: `tbb::concurrent_bounded_queue` matches v1's contract
+(bounded, blocking, MPMC); `moodycamel::ConcurrentQueue` is **unbounded**
+(producers never wait) and FIFO only **per producer** — it is answering an
+easier question, and still gets to count the same ops.
+
+| ops/s, mean ± stddev | v1 MutexQueue | tbb::concurrent_bounded_queue | moodycamel::ConcurrentQueue |
+|---|---|---|---|
+| single-thread round trip | 104.7M ± 1.4M | 114.3M ± 0.4M | 167.4M ± 2.2M |
+| 2 threads (1p + 1c) | **35.4M ± 0.5M** | 22.9M ± 0.6M | 92.1M ± 2.9M |
+| 8 threads (4p + 4c) | **21.3M ± 0.2M** | 16.5M ± 0.6M | 45.6M ± 1.8M |
+
+Two findings, one expected and one not:
+
+**moodycamel wins everything** — 2.6× v1 at 2 threads, 2.1× at 8, 1.6×
+uncontended — and that is the honest gap to a mature lock-free design, *minus*
+a discount the table cannot show: it never blocks a producer and never
+promises global FIFO, so part of its lead is bought with a weaker contract,
+not just better engineering. Its design (a sub-queue per producer, so
+producers never contend with each other; consumers rotate across sub-queues)
+is exactly the kind of sharing-avoidance v2.5's cached indices gesture at.
+
+**v1 beats TBB's bounded queue under contention** — 1.5× at 2 threads, 1.3×
+at 8 — losing only the uncontended round trip (0.92×). A mechanistic reading
+(from the shape of the numbers, not from profiling): a single short critical
+section behind an uncontended-fast-path mutex costs one atomic handoff per
+op, while TBB's bounded queue pays several atomic RMWs per op (ticket
+dispensing plus slot state) to admit parallelism between operations — a price
+that only pays off when there is parallelism to admit. With 64-bit items and
+~28 ns critical sections there is none to find, so the simpler design wins.
+The lesson v3 was meant to teach, in reverse: lock-free is not a synonym for
+faster; it buys progress guarantees and scalability headroom, and both cost
+per-op overhead.
+
+As everywhere above, these are ops/s — halve for items/s.
+
+_The v2/v2.5 SPSC rings join this table when their PRs merge._
