@@ -91,8 +91,9 @@ numbers above are ops/s; halve them for items transferred per second
 ### v3 — versus the industry (moodycamel, TBB)
 
 Same machine and harness, one session (load average ~3.7), all three queues in
-one binary; v1's own numbers reproduced within 2% of the table above, which is
-what makes the columns comparable. Contract differences that the numbers must
+one binary (moodycamel `concurrentqueue` v1.0.4, oneTBB v2022.2.0); v1's own
+numbers reproduced within 2% of the table above, which is what makes the
+columns comparable. Contract differences that the numbers must
 be read against: `tbb::concurrent_bounded_queue` matches v1's contract
 (bounded, blocking, MPMC); `moodycamel::ConcurrentQueue` is **unbounded**
 (producers never wait) and FIFO only **per producer** — it is answering an

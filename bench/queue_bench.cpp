@@ -68,6 +68,7 @@ class MoodycamelQueue {
   explicit MoodycamelQueue(std::size_t capacity) : queue_(capacity) {}
 
   bool push(std::uint64_t value) { return queue_.enqueue(value); }
+  // Same as push: an unbounded queue has no "full" to refuse on.
   bool try_push(std::uint64_t value) { return queue_.enqueue(value); }
   bool pop(std::uint64_t& out) {
     while (!queue_.try_dequeue(out)) {
