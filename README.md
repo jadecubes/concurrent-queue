@@ -154,4 +154,39 @@ consumer's core before the consumer can advance, and no amount of caching
 removes that dependency. Publishing an index once per batch of N items is what
 buys the next factor, and it trades latency to get it.
 
-_v3 to follow._
+### v2.5 — MpmcQueue (Vyukov bounded MPMC)
+
+Same machine and harness, one session containing v1, v2.1, and v2.5 (load
+average ~5–6); the controls reproduced their tables above within noise (v1
+SPSC 36.2M vs 36.3M, v2.1 SPSC 621.6M vs 613.7M ops/s), which is what makes
+the columns comparable.
+
+The design is Dmitry Vyukov's bounded MPMC queue: each slot carries its own
+sequence counter and the two position counters only hand out tickets, so
+producers synchronize with consumers per slot rather than through one shared
+index pair. Two deviations from the canonical version, both for contract
+parity with the other queues: capacity is arbitrary (indexing by modulo, not
+a power-of-two mask), and the sequence encoding is doubled — free = 2·ticket,
+full = 2·ticket + 1 — because the classic encoding collides at capacity 1,
+where "holds ticket t's data" and "free for ticket t+1" are the same number.
+
+| Benchmark (v2.5 MpmcQueue) | Throughput | vs v1 same shape | CV |
+|---|---|---|---|
+| single-thread push+pop round trip | 286M ± 1M ops/s | 2.7× | 0.3% |
+| 2 threads (1 producer, 1 consumer) | 224M ± 4M ops/s | 6.2× | 1.6% |
+| 8 threads (4 producers, 4 consumers) | **13.3M ± 0.6M ops/s** | **0.62× — slower than the mutex** | 4.3% |
+
+The result worth stating plainly: on the MPMC shape this queue exists for, it
+**loses to the v1 mutex baseline** (13.3M vs 21.6M ops/s), while winning the
+shapes with little or no contention. A mechanistic reading (from the shape of
+the numbers, not from profiling): every operation is an atomic RMW on one of
+two position counters that all eight threads hammer, plus a slot-sequence
+handoff — under full contention the CAS retry traffic thrashes exactly the
+cache lines the SPSC ring so carefully avoided, whereas the mutex serializes
+politely through one futex and the losers sleep instead of retrying. This
+matches the v3 finding on the same machine that `tbb::concurrent_bounded_queue`
+(also ticket-based) loses to the mutex too, and it is why moodycamel gives
+each producer its own sub-queue instead of one shared ring. Lock-free buys
+progress guarantees, not throughput.
+
+_v3 (vs moodycamel and TBB, including this queue) to follow._

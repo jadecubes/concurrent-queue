@@ -5,15 +5,9 @@
 #include <cstddef>
 #include <vector>
 
-namespace cq {
+#include "cq/cache_line.hpp"
 
-// Pad the producer- and consumer-owned atomics onto separate cache lines so a
-// store on one side does not invalidate the other side's line (false sharing).
-// A fixed constant rather than std::hardware_destructive_interference_size:
-// that value moves with compiler version and tuning flags (GCC warns about
-// any header use for exactly that reason), and 128 covers both x86-64
-// adjacent-line prefetching and Apple/ARM64 hardware.
-inline constexpr std::size_t kCacheLineSize = 128;
+namespace cq {
 
 /// v2: bounded FIFO ring for exactly one producer thread and one consumer
 /// thread, synchronized with atomics only — no mutex, no condition variables.

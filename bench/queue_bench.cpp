@@ -12,6 +12,7 @@
 // set MinTime so a bare run is already long enough to be meaningful; add
 // repetitions for a spread: ./queue_bench --benchmark_repetitions=10
 
+#include <cq/mpmc_queue.hpp>
 #include <cq/mutex_queue.hpp>
 #include <cq/spsc_queue.hpp>
 
@@ -87,6 +88,7 @@ void BM_QueuePushPopSingleThread(benchmark::State& state) {
   state.SetItemsProcessed(state.iterations() * 2);
 }
 
+using MpmcQueue = cq::MpmcQueue<std::uint64_t>;
 using MutexQueue = cq::MutexQueue<std::uint64_t>;
 using SpscQueue = cq::SpscQueue<std::uint64_t>;
 
@@ -120,6 +122,15 @@ BENCHMARK(BM_QueueThroughput<SpscQueue>)
     ->MinTime(kMinTimeSeconds)
     ->Name("SpscQueue/throughput");
 
+BENCHMARK(BM_QueueThroughput<MpmcQueue>)
+    ->Setup(setup_queue<MpmcQueue>)
+    ->Teardown(teardown_queue<MpmcQueue>)
+    ->Threads(kSpscThreads)
+    ->Threads(kMpmcThreads)
+    ->UseRealTime()
+    ->MinTime(kMinTimeSeconds)
+    ->Name("MpmcQueue/throughput");
+
 BENCHMARK(BM_QueuePushPopSingleThread<MutexQueue>)
     ->MinTime(kMinTimeSeconds)
     ->Name("MutexQueue/single_thread_roundtrip");
@@ -127,5 +138,9 @@ BENCHMARK(BM_QueuePushPopSingleThread<MutexQueue>)
 BENCHMARK(BM_QueuePushPopSingleThread<SpscQueue>)
     ->MinTime(kMinTimeSeconds)
     ->Name("SpscQueue/single_thread_roundtrip");
+
+BENCHMARK(BM_QueuePushPopSingleThread<MpmcQueue>)
+    ->MinTime(kMinTimeSeconds)
+    ->Name("MpmcQueue/single_thread_roundtrip");
 
 }  // namespace
