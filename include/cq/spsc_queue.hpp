@@ -86,16 +86,16 @@ class SpscQueue {
   /// To guarantee the consumer drains every item, stop the producer before
   /// calling close(): a push racing with close() may enqueue an item after
   /// the consumer has already observed the queue as closed and drained.
-  void close();
+  void close() noexcept;
 
   /// @return true once close() has been called (advisory snapshot).
-  [[nodiscard]] bool closed() const;
+  [[nodiscard]] bool closed() const noexcept;
 
   /// @return Current number of queued elements (advisory snapshot).
-  [[nodiscard]] std::size_t size() const;
+  [[nodiscard]] std::size_t size() const noexcept;
 
   /// @return Fixed capacity set at construction.
-  [[nodiscard]] std::size_t capacity() const;
+  [[nodiscard]] std::size_t capacity() const noexcept;
 
  private:
   // Validates capacity and returns the slot count for the ring (capacity + 1).
@@ -115,7 +115,7 @@ class SpscQueue {
   [[nodiscard]] bool has_room(std::size_t slot_after) noexcept;
   [[nodiscard]] bool has_data(std::size_t head) noexcept;
 
-  [[nodiscard]] std::size_t next(std::size_t index) const;
+  [[nodiscard]] std::size_t next(std::size_t index) const noexcept;
 
   // Classic Lamport ring: one slot is kept permanently empty so head_ ==
   // tail_ means empty and next(tail_) == head_ means full, with no shared

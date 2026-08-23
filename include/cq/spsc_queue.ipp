@@ -148,17 +148,17 @@ bool SpscQueue<T>::has_data(std::size_t head) noexcept {
 }
 
 template <typename T>
-void SpscQueue<T>::close() {
+void SpscQueue<T>::close() noexcept {
   closed_.store(true, std::memory_order_release);
 }
 
 template <typename T>
-bool SpscQueue<T>::closed() const {
+bool SpscQueue<T>::closed() const noexcept {
   return closed_.load(std::memory_order_acquire);
 }
 
 template <typename T>
-std::size_t SpscQueue<T>::size() const {
+std::size_t SpscQueue<T>::size() const noexcept {
   // Two independent relaxed loads: the result is a snapshot that may be
   // stale by the time the caller looks at it, which the contract allows.
   const auto head = head_.load(std::memory_order_relaxed);
@@ -167,12 +167,12 @@ std::size_t SpscQueue<T>::size() const {
 }
 
 template <typename T>
-std::size_t SpscQueue<T>::capacity() const {
+std::size_t SpscQueue<T>::capacity() const noexcept {
   return buffer_.size() - 1;
 }
 
 template <typename T>
-std::size_t SpscQueue<T>::next(std::size_t index) const {
+std::size_t SpscQueue<T>::next(std::size_t index) const noexcept {
   return index + 1 == buffer_.size() ? 0 : index + 1;
 }
 
