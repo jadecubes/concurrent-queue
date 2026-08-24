@@ -141,7 +141,7 @@ std::size_t MutexQueue<T>::size() const {
 
 // buffer_ is never resized after construction, so no lock is needed.
 template <typename T>
-std::size_t MutexQueue<T>::capacity() const {
+std::size_t MutexQueue<T>::capacity() const noexcept {
   return buffer_.size();
 }
 
@@ -170,7 +170,7 @@ void MutexQueue<T>::dequeue_locked(T& out) {
 }
 
 template <typename T>
-std::size_t MutexQueue<T>::next(std::size_t index) const {
+std::size_t MutexQueue<T>::next(std::size_t index) const noexcept {
   return index + 1 == buffer_.size() ? 0 : index + 1;
 }
 
