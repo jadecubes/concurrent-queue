@@ -7,15 +7,48 @@ each measured against the others.
 > Learning project. The deliverable is the measurement: what each design
 > actually costs. Full writeups in [docs/results.md](docs/results.md).
 
-## The problem
+## Start from the pattern you already know
 
-Hand items from one thread to another without losing, duplicating, or
-reordering them — and without letting a fast producer run the machine out of
-memory when the consumer falls behind.
+Every C++ producer/consumer begins here — a mutex, a condition variable, and a
+`std::queue`:
 
-A **bounded** queue is the answer: capacity is fixed, and when it fills the
-producer waits. That backpressure is the feature. An unbounded queue does not
-avoid the problem, it just relocates the failure to the allocator.
+```cpp
+std::mutex m;
+std::condition_variable cv;
+std::queue<Task> q;
+
+void consumer() {
+    std::unique_lock<std::mutex> lk(m);
+    cv.wait(lk, [] { return !q.empty(); });  // predicate form: absorbs spurious wakeups
+    Task t = std::move(q.front());
+    q.pop();
+    lk.unlock();                             // don't hold a lock across user code
+    t.run();
+}
+
+void producer(Task t) {
+    {
+        std::lock_guard<std::mutex> lk(m);
+        q.push(std::move(t));                // shared state: only under the lock
+    }
+    cv.notify_one();                         // cheaper released than held
+}
+```
+
+Two things there are already right, and they are the two people most often get
+wrong: `t.run()` runs after the lock is released, and so does `notify_one()`.
+
+What it does not do is everything else this repository is about:
+
+| Missing | What goes wrong | Fixed by |
+|---|---|---|
+| Any bound on size | A fast producer grows the queue until the process runs out of memory | Fixed capacity — `push` waits instead, so the producer feels the backpressure |
+| Any way to stop | `cv.wait` never returns; the program hangs at exit instead of finishing | `close()` — refuses new items, wakes every waiter, still drains what is queued |
+| Encapsulation | `m`, `cv` and `q` are three separate objects; any code can touch `q` having forgotten the lock | One object owns all three, and the lock is not reachable from outside |
+| A loop | The consumer handles one task and returns | `pop` in a loop until the queue is closed *and* drained |
+
+Fix those four and you have `MutexQueue`. The other two queues then throw the
+mutex away entirely — which is only possible by giving something else up.
 
 ## The contract
 
@@ -39,7 +72,15 @@ Every operation returns whether it succeeded, and every one is `[[nodiscard]]`.
 ## The three queues
 
 They differ in one thing — **how many threads may touch each side** — and the
-rest follows from that.
+rest follows from that. Read them as a sequence of trades:
+
+- `MutexQueue` gives up nothing and buys correctness: bounded, closeable, safe
+  from any number of threads. One mutex acquisition per operation is the price.
+- `SpscQueue` gives up all but one thread per side. That is what makes every
+  index update a plain store instead of an atomic read-modify-write.
+- `MpmcQueue` keeps the thread count and pays for it with a CAS per operation.
+
+The third trade is the one that did not pay off — see [Performance](#performance).
 
 | | `MutexQueue` | `SpscQueue` | `MpmcQueue` |
 |---|---|---|---|
@@ -63,13 +104,8 @@ flowchart TD
 ### Why keep both `SpscQueue` and `MpmcQueue`?
 
 `MpmcQueue` can do everything `SpscQueue` can — one producer and one consumer
-is just a multi-producer queue with two threads. `SpscQueue` earns its place by
-*giving something up*.
-
-When only one thread can write an index, publishing a value is a plain store.
-When several might, it becomes an atomic read-modify-write that can lose a race
-and have to retry. Nothing else about the two designs differs nearly as much,
-and on the one workload both can run, it is worth **2.7×**.
+is just a multi-producer queue with two threads. On the one workload both can
+run, giving up that generality is worth **2.7×**. Here is where it goes.
 
 One writer per index — publish, and the other side picks it up:
 
