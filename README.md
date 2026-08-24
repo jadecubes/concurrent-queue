@@ -9,21 +9,118 @@ industrial implementations.
 
 ## Roadmap
 
-- **v1 — mutex + condition_variable queue.** Bounded ring storage guarded by a
+- ✅ **v1 — mutex + condition_variable queue.** Bounded ring storage guarded by a
   `std::mutex`, with `not_full` / `not_empty` condition variables and
   `close()` shutdown semantics. The correctness and performance baseline.
   Each operation offers three waiting disciplines — wait indefinitely
   (`push` / `pop`), never wait (`try_push` / `try_pop`), or wait up to a
   caller-supplied bound (`try_push_for` / `try_pop_for`).
-- **v2 — lock-free SPSC ring buffer with atomics.** Same ring storage, no
+- ✅ **v2 — lock-free SPSC ring buffer with atomics.** Same ring storage, no
   lock. Measure the difference against v1 with Google Benchmark.
-- **v2.5 — bounded MPMC queue** (Vyukov-style, per-slot sequence counters).
-- **v3 — compare against moodycamel and TBB.** Run the same benchmarks against
+- ✅ **v2.1 — cached peer indices.** Each side caches the opposite index so a
+  steady stream never reads the peer's cache line.
+- ✅ **v2.5 — bounded MPMC queue** (Vyukov-style, per-slot sequence counters).
+- 🚧 **v3 — compare against moodycamel and TBB.** Run the same benchmarks against
   `moodycamel::ConcurrentQueue` and `tbb::concurrent_bounded_queue`, then
   write up why mine loses (or wins).
-- **Stretch — a thread pool** on top of the MPMC queue.
+- ⬜ **Stretch — a thread pool** on top of the MPMC queue.
 
-## Planned layout
+## Choosing a queue
+
+```mermaid
+flowchart TD
+    A{"More than one producer or consumer?"} -->|No| B["SpscQueue<br/>613.7M ops/s"]
+    A -->|Yes| C{"Need a bounded wait<br/>(try_push_for / try_pop_for)?"}
+    C -->|Yes| D["MutexQueue<br/>21.6M ops/s at 4+4"]
+    C -->|No| E{"Measured that lock-free<br/>actually helps your workload?"}
+    E -->|Yes| F["MpmcQueue<br/>13.3M ops/s at 4+4"]
+    E -->|"No / not yet"| D
+```
+
+| You have | Use | Why |
+|---|---|---|
+| Any number of threads on either side | `MutexQueue` | Simplest contract; the only one with timed `try_*_for` operations |
+| Exactly one producer **and** one consumer | `SpscQueue` | ~2.7× the throughput of `MpmcQueue` on that shape |
+| Any number of threads, and you want lock-free | `MpmcQueue` | Progress guarantees without a mutex — but see the numbers before assuming it is faster |
+
+### Why both SPSC and MPMC?
+
+`MpmcQueue` subsumes `SpscQueue` functionally — one producer and one consumer
+is just an MPMC queue with two threads. The reason both exist is that dropping
+the multi-thread requirement removes the need for **any atomic
+read-modify-write** on the hot path:
+
+| | `SpscQueue` (v2.1) | `MpmcQueue` (v2.5) |
+|---|---|---|
+| Producer / consumer threads | **exactly one each** | any number |
+| More than one per side | **undefined behavior**, no diagnostic | supported |
+| Publishing an index | plain load + release-store | **CAS** on a position counter shared by that side |
+| Retries under contention | never — nothing to contend on | CAS loop, plus a slot-sequence re-check |
+| Per-slot state | none | one sequence counter per slot |
+| Hot cache lines | 2, one owned by each side | position counters, contended by every thread on that side |
+| Throughput, 1 producer + 1 consumer | **613.7M ops/s** | 224M ops/s |
+| Throughput, 4 producers + 4 consumers | not supported | 13.3M ops/s |
+
+The two protocols side by side. `SpscQueue` — one writer per index, so the
+only synchronization is a release store paired with an acquire load, and the
+cached index means most operations never issue that load at all:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as Producer
+    participant R as Ring
+    participant C as Consumer
+
+    Note over P: has_room: compare tail+1 with cached head<br/>cache says room, so the peer line is never read
+    P->>R: buffer_[tail] = value
+    P->>R: tail_.store(tail+1, release)
+    Note over R: this release pairs with the acquire below<br/>and publishes the slot write
+    Note over C: has_data: cache says empty, so refresh
+    C->>R: tail_.load(acquire)
+    C->>R: out = move(buffer_[head])
+    C->>R: head_.store(head+1, release)
+    Note over R: publishes slot-free back to the producer
+```
+
+`MpmcQueue` — the position counter is shared, so claiming a ticket is a CAS
+that can lose, and the handoff moves to a per-slot sequence counter:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Producer A
+    participant B as Producer B
+    participant S as Slot t mod N
+    participant C as Consumer
+
+    A->>S: sequence.load(acquire) - free for ticket t
+    B->>S: sequence.load(acquire) - free for ticket t
+    Note over A,B: both now want the same ticket
+    A->>A: CAS enqueue_pos_ t to t+1 - wins
+    B->>B: CAS fails - reload and retry
+    A->>S: value = ...
+    A->>S: sequence.store(2t+1, release)
+    C->>S: sequence.load(acquire) - holds ticket t
+    C->>S: out = move(value)
+    C->>S: sequence.store(2(t+N), release)
+    Note over C: slot is now free for the next lap
+```
+
+Steps 5 and 6 are the whole story: they do not exist in the SPSC diagram, and
+under contention they are what every thread spends its time on.
+
+So `SpscQueue` is worth keeping for the shape it is restricted to, and
+`MpmcQueue` is worth keeping because it can serve shapes `SpscQueue` cannot.
+The restriction is what buys the speed — and it is enforced only by the
+contract, so violating it corrupts the queue silently.
+
+If you only ever want one queue, keep `MpmcQueue`: it is the general one. Two
+implementations means two sets of bugs and a contract that fails silently when
+broken. This repository keeps both because measuring what generality costs is
+the point of it.
+
+## Layout
 
 ```
 include/cq/     header-only queue implementations
@@ -57,6 +154,29 @@ git ls-files '*.cpp' | xargs clang-tidy -p build-rel
   machine specs.
 
 ## Results
+
+Every queue, every benchmark shape, in one table. Throughput in ops/s, higher
+is better; the per-version sections below carry the error bars, the per-op
+costs, and the reasoning.
+
+| Benchmark shape | v1 `MutexQueue` | v2 `SpscQueue` | v2.1 `SpscQueue` | v2.5 `MpmcQueue` |
+|---|---|---|---|---|
+| single-thread push+pop round trip | 105.1M | **2.00G** | 1.56G | 286M |
+| SPSC — 1 producer, 1 consumer | 35.7M | 369M | **613.7M** | 224M |
+| MPMC — 4 producers, 4 consumers | **21.6M** | not supported | not supported | 13.3M |
+
+Two results stand out, both of them the uncomfortable kind:
+
+- **Lock-free lost the shape it was built for.** On 4+4, `MpmcQueue` (13.3M)
+  is *slower than the v1 mutex* (21.6M). Lock-free buys progress guarantees,
+  not throughput.
+- **The v2.1 optimization is not free.** Caching the peer index won 1.70× on
+  the SPSC pair but cost 23% on the single-thread round trip, which is the
+  cache's worst case.
+
+These columns come from several sessions rather than one run; each section
+below states which controls it re-ran and how closely they reproduced, which
+is what makes them comparable.
 
 Machine: Apple M2 Pro (12 cores), 32 GB, macOS 26. Release build,
 `--benchmark_repetitions=10` (each run is `MinTime` 1s, set on the benchmark).
