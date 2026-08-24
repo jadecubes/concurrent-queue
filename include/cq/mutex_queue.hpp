@@ -1,6 +1,7 @@
 #ifndef CQ_MUTEX_QUEUE_HPP_
 #define CQ_MUTEX_QUEUE_HPP_
 
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <mutex>
@@ -10,6 +11,10 @@ namespace cq {
 
 /// v1 baseline: bounded FIFO ring guarded by a single std::mutex, with
 /// not_full / not_empty condition variables and close() shutdown semantics.
+///
+/// Each operation comes in three waiting disciplines: push()/pop() wait
+/// indefinitely, try_push()/try_pop() never wait, and try_push_for()/
+/// try_pop_for() wait up to a caller-supplied bound.
 ///
 /// Thread-safety: after construction, all member functions may be called
 /// concurrently from any number of producer and consumer threads. closed()
@@ -61,6 +66,35 @@ class MutexQueue {
   /// @return false if the queue is empty.
   [[nodiscard]] bool try_pop(T& out);
 
+  /// Enqueues a value, blocking until a slot frees, the queue closes, or
+  /// timeout elapses — the bounded middle ground between push(), which waits
+  /// indefinitely, and try_push(), which does not wait at all.
+  /// @tparam Rep Arithmetic type of the timeout's tick count.
+  /// @tparam Period std::ratio giving the timeout's tick period.
+  /// @param value Element to enqueue; consumed even when the push fails.
+  /// @param timeout Longest time to wait. A non-positive timeout makes this
+  ///   equivalent to try_push().
+  /// @return false if the timeout elapsed with the queue still full, or if
+  ///   the queue is closed (the value is dropped). To tell the two apart,
+  ///   check closed(): close() is one-way, so a false from closed() after a
+  ///   failed call reliably means "timed out, worth retrying".
+  template <typename Rep, typename Period>
+  [[nodiscard]] bool try_push_for(T value, const std::chrono::duration<Rep, Period>& timeout);
+
+  /// Dequeues into out, blocking until an element arrives, the queue closes
+  /// and drains, or timeout elapses.
+  /// @tparam Rep Arithmetic type of the timeout's tick count.
+  /// @tparam Period std::ratio giving the timeout's tick period.
+  /// @param[out] out Receives the dequeued element on success; untouched on
+  ///   failure.
+  /// @param timeout Longest time to wait. A non-positive timeout makes this
+  ///   equivalent to try_pop().
+  /// @return false if the timeout elapsed with the queue still empty, or
+  ///   once the queue is closed and drained. As with try_push_for(),
+  ///   closed() distinguishes the two.
+  template <typename Rep, typename Period>
+  [[nodiscard]] bool try_pop_for(T& out, const std::chrono::duration<Rep, Period>& timeout);
+
   /// Closes the queue and wakes all blocked producers and consumers.
   /// Idempotent. After close(), push() refuses new values; pop() drains
   /// what remains.
@@ -79,6 +113,13 @@ class MutexQueue {
   // The *_locked helpers require mutex_ to be held by the caller.
   void enqueue_locked(T&& value);
   void dequeue_locked(T& out);
+
+  // Wait predicates, shared by the blocking and timed variants so the two
+  // cannot drift apart. Both mean "stop waiting", which covers two outcomes
+  // the caller still has to separate: the operation can proceed, or the
+  // queue closed and the caller must give up.
+  [[nodiscard]] bool not_full_or_closed_locked() const;
+  [[nodiscard]] bool not_empty_or_closed_locked() const;
 
   [[nodiscard]] std::size_t next(std::size_t index) const;
 
