@@ -9,21 +9,192 @@ industrial implementations.
 
 ## Roadmap
 
-- **v1 — mutex + condition_variable queue.** Bounded ring storage guarded by a
+- ✅ **v1 — mutex + condition_variable queue.** Bounded ring storage guarded by a
   `std::mutex`, with `not_full` / `not_empty` condition variables and
   `close()` shutdown semantics. The correctness and performance baseline.
   Each operation offers three waiting disciplines — wait indefinitely
   (`push` / `pop`), never wait (`try_push` / `try_pop`), or wait up to a
   caller-supplied bound (`try_push_for` / `try_pop_for`).
-- **v2 — lock-free SPSC ring buffer with atomics.** Same ring storage, no
+- ✅ **v2 — lock-free SPSC ring buffer with atomics.** Same ring storage, no
   lock. Measure the difference against v1 with Google Benchmark.
-- **v2.5 — bounded MPMC queue** (Vyukov-style, per-slot sequence counters).
-- **v3 — compare against moodycamel and TBB.** Run the same benchmarks against
+- ✅ **v2.1 — cached peer indices.** Each side caches the opposite index so a
+  steady stream never reads the peer's cache line.
+- ✅ **v2.5 — bounded MPMC queue** (Vyukov-style, per-slot sequence counters).
+- 🚧 **v3 — compare against moodycamel and TBB.** Run the same benchmarks against
   `moodycamel::ConcurrentQueue` and `tbb::concurrent_bounded_queue`, then
   write up why mine loses (or wins).
-- **Stretch — a thread pool** on top of the MPMC queue.
+- ⬜ **Stretch — a thread pool** on top of the MPMC queue.
 
-## Planned layout
+## Choosing a queue
+
+```mermaid
+flowchart TD
+    A{"More than one producer or consumer?"} -->|No| B["SpscQueue<br/>613.7M ops/s"]
+    A -->|Yes| C{"Need a bounded wait<br/>(try_push_for / try_pop_for)?"}
+    C -->|Yes| D["MutexQueue<br/>21.6M ops/s at 4+4"]
+    C -->|No| E{"Measured that lock-free<br/>actually helps your workload?"}
+    E -->|Yes| F["MpmcQueue<br/>13.3M ops/s at 4+4"]
+    E -->|"No / not yet"| D
+```
+
+| You have | Use | Why |
+|---|---|---|
+| Any number of threads on either side | `MutexQueue` | Simplest contract; the only one with timed `try_*_for` operations |
+| Exactly one producer **and** one consumer | `SpscQueue` | ~2.7× the throughput of `MpmcQueue` on that shape |
+| Any number of threads, and you want lock-free | `MpmcQueue` | Progress guarantees without a mutex — but see the numbers before assuming it is faster |
+
+### Why both SPSC and MPMC?
+
+`MpmcQueue` subsumes `SpscQueue` functionally — one producer and one consumer
+is just an MPMC queue with two threads. The reason both exist is that dropping
+the multi-thread requirement removes the need for **any atomic
+read-modify-write** on the hot path:
+
+| | `SpscQueue` (v2.1) | `MpmcQueue` (v2.5) |
+|---|---|---|
+| Producer / consumer threads | **exactly one each** | any number |
+| More than one per side | **undefined behavior**, no diagnostic | supported |
+| Publishing an index | plain load + release-store | **CAS** on a position counter shared by that side |
+| Retries under contention | never — nothing to contend on | CAS loop, plus a slot-sequence re-check |
+| Per-slot state | none | one sequence counter per slot |
+| Hot cache lines | 2, one owned by each side | position counters, contended by every thread on that side |
+| Throughput, 1 producer + 1 consumer | **613.7M ops/s** | 224M ops/s |
+| Throughput, 4 producers + 4 consumers | not supported | 13.3M ops/s |
+
+The two protocols side by side. `SpscQueue` — one writer per index, so the
+only synchronization is a release store paired with an acquire load, and the
+cached index means most operations never issue that load at all:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as Producer
+    participant R as Ring
+    participant C as Consumer
+
+    Note over P: has_room: compare tail+1 with cached head<br/>cache says room, so the peer line is never read
+    P->>R: buffer_[tail] = value
+    P->>R: tail_.store(tail+1, release)
+    Note over R: this release pairs with the acquire below<br/>and publishes the slot write
+    Note over C: has_data: cache says empty, so refresh
+    C->>R: tail_.load(acquire)
+    C->>R: out = move(buffer_[head])
+    C->>R: head_.store(head+1, release)
+    Note over R: publishes slot-free back to the producer
+```
+
+`MpmcQueue` — the position counter is shared, so claiming a ticket is a CAS
+that can lose, and the handoff moves to a per-slot sequence counter:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Producer A
+    participant B as Producer B
+    participant S as Slot t mod N
+    participant C as Consumer
+
+    A->>S: sequence.load(acquire) - free for ticket t
+    B->>S: sequence.load(acquire) - free for ticket t
+    Note over A,B: both now want the same ticket
+    A->>A: CAS enqueue_pos_ t to t+1 - wins
+    B->>B: CAS fails - reload and retry
+    A->>S: value = ...
+    A->>S: sequence.store(2t+1, release)
+    C->>S: sequence.load(acquire) - holds ticket t
+    C->>S: out = move(value)
+    C->>S: sequence.store(2(t+N), release)
+    Note over C: slot is now free for the next lap
+```
+
+Steps 5 and 6 are the whole story: they do not exist in the SPSC diagram, and
+under contention they are what every thread spends its time on.
+
+If you only ever want one queue, keep `MpmcQueue` — it is the general one, and
+two implementations means two sets of bugs plus a restriction enforced only by
+the contract, so breaking it corrupts the queue with no diagnostic. This
+repository keeps both because measuring what that generality costs is the
+point of it.
+
+## Usage
+
+Header-only. Put `include/` on your include path and include the queue you
+picked above.
+
+The canonical producer/consumer shape — this compiles and runs as-is:
+
+```cpp
+#include <cq/mutex_queue.hpp>
+
+#include <iostream>
+#include <thread>
+
+int main() {
+  // Bounded: 64 slots. Declared before the threads, so it outlives them.
+  cq::MutexQueue<int> queue(64);
+  long long total = 0;
+
+  std::jthread producer([&queue] {
+    for (int i = 1; i <= 1000; ++i) {
+      if (!queue.push(i)) {  // false => the queue closed; stop early
+        return;
+      }
+    }
+    queue.close();  // done producing: lets the consumer drain and exit
+  });
+
+  std::jthread consumer([&queue, &total] {
+    int value = 0;
+    while (queue.pop(value)) {  // false => closed *and* drained
+      total += value;
+    }
+  });
+
+  producer.join();
+  consumer.join();
+  std::cout << "sum = " << total << '\n';  // 500500
+}
+```
+
+Two rules are doing the real work there, and both are easy to get wrong:
+
+- **Someone must call `close()`.** `pop` blocks while the queue is empty and
+  open, so without a close the consumer waits forever and the program hangs
+  instead of exiting. `pop` returns `false` only once the queue is closed
+  *and* drained, so closing loses nothing that was already pushed. With
+  several producers, join them all before closing.
+- **The queue must outlive the threads.** Declaring it before them is enough —
+  destruction runs in reverse, so the `jthread`s join first. Destroying a
+  queue while a thread sits in `push`/`pop` is undefined behavior.
+
+Every operation is `[[nodiscard]]`, because ignoring whether a push succeeded
+is almost always a bug.
+
+### When you cannot afford to block
+
+```cpp
+// Never wait: full is your problem to handle.
+if (!queue.try_push(item)) {
+  ++dropped;  // drop, retry, or push back on whatever produced it
+}
+
+// Wait, but not forever (MutexQueue only).
+int value = 0;
+if (queue.try_pop_for(value, std::chrono::milliseconds(100))) {
+  handle(value);
+} else if (queue.closed()) {
+  // shutting down — stop retrying, close() is one-way
+} else {
+  // timed out with the queue still empty
+}
+```
+
+`SpscQueue` and `MpmcQueue` are drop-in for everything above except the timed
+`try_*_for` pair, which only `MutexQueue` has. Swapping `MutexQueue` for
+`SpscQueue` in the first example is a one-line change — just make sure exactly
+one thread touches each side, since nothing checks it for you.
+
+## Layout
 
 ```
 include/cq/     header-only queue implementations
@@ -64,6 +235,28 @@ The machine was not idle — load average ~4.6 — so treat these as a floor.
 
 An **op** is one `push` or one `pop`, so transferring an item costs two ops;
 this is the unit Google Benchmark prints as `items_per_second`.
+
+Every queue against every benchmark shape, higher is better. The per-version
+sections below carry the error bars, the per-op costs, and the reasoning.
+
+| Benchmark shape | v1 `MutexQueue` | v2 `SpscQueue` | v2.1 `SpscQueue` | v2.5 `MpmcQueue` |
+|---|---|---|---|---|
+| single-thread push+pop round trip | 105.1M | **2.00G** | 1.56G | 286M |
+| SPSC — 1 producer, 1 consumer | 35.7M | 369M | **613.7M** | 224M |
+| MPMC — 4 producers, 4 consumers | **21.6M** | not supported | not supported | 13.3M |
+
+Two results stand out, both of them the uncomfortable kind:
+
+- **Lock-free lost the shape it was built for.** On 4+4, `MpmcQueue` (13.3M)
+  is *slower than the v1 mutex* (21.6M). Lock-free buys progress guarantees,
+  not throughput.
+- **The v2.1 optimization is not free.** Caching the peer index won 1.70× on
+  the SPSC pair but cost 23% on the single-thread round trip, which is the
+  cache's worst case.
+
+These columns come from several sessions rather than one run; each section
+below states which controls it re-ran and how closely they reproduced, which
+is what makes them comparable.
 
 Per-op figures below are `1 / throughput` — the aggregate cost of one op across
 the whole queue, not per-thread latency.
@@ -109,13 +302,10 @@ other side's index and release-stores its own. The new cost center is the
 cache coherence traffic itself: the same ring that moves 2.00G ops/s on one
 core drops to 369M when producer and consumer sit on different cores and the
 `head_`/`tail_` lines ping-pong between them. Caching the last-seen peer index
-to skip most of those loads is the classic next step, left for a v2.x once the
-unoptimized gap is on record.
+skips most of those loads; that is v2.1, next section — these figures are the
+unoptimized gap it is measured against.
 
 ### v2.1 — cached peer indices
-
-(Numbered v2.1, not v2.5: the roadmap reserves v2.5 for the Vyukov-style
-MPMC queue, and this is the "v2.x" follow-up the section above named.)
 
 Same machine and harness. v2 was rebuilt from its own commit and run
 alternately with v2.1 in one session (load average ~4.9), so both columns come
@@ -146,10 +336,9 @@ stream — skips nearly all of them. Worth stating plainly rather than quoting
 only the number that flatters the change.
 
 The v2 column here (361.7M ops/s) independently agrees with the re-measured
-figure in the v2 table above (369M ± 14M) — both sessions replaced an early
-noisy sample (252M, CV 21.9%) taken on a busier machine. Against the
-same-session v1 baseline, **v2 is ~10× v1** and **v2.1 is ~17×** (613.7M vs
-35.4M ops/s).
+figure in the v2 table above (369M ± 14M), from a separate session. Against
+the same-session v1 baseline, **v2 is ~10× v1** and **v2.1 is ~17×** (613.7M
+vs 35.4M ops/s).
 
 Where the remaining time goes: at 3.26 ns per op the pair is dominated by the
 handoff itself — the producer's release store to `tail_` still has to reach the
@@ -186,10 +375,10 @@ the numbers, not from profiling): every operation is an atomic RMW on one of
 two position counters that all eight threads hammer, plus a slot-sequence
 handoff — under full contention the CAS retry traffic thrashes exactly the
 cache lines the SPSC ring so carefully avoided, whereas the mutex serializes
-politely through one futex and the losers sleep instead of retrying. This
-matches the v3 finding on the same machine that `tbb::concurrent_bounded_queue`
-(also ticket-based) loses to the mutex too, and it is why moodycamel gives
-each producer its own sub-queue instead of one shared ring. Lock-free buys
+politely through one futex and the losers sleep instead of retrying. The v3
+comparison finds the same on this machine for `tbb::concurrent_bounded_queue`,
+which is also ticket-based, and it is why moodycamel gives each producer its
+own sub-queue instead of one shared ring. Lock-free buys
 progress guarantees, not throughput.
 
 _v3 (vs moodycamel and TBB, including this queue) to follow._
