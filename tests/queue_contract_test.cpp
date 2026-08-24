@@ -37,8 +37,14 @@ struct MpmcFamily {
   static constexpr const char* kName = "Mpmc";
 };
 
+// The fixture spells out the dependent-template names once, so the tests can
+// say TestFixture::IntQueue instead of TypeParam::template Queue<int>.
 template <typename Family>
-class QueueContract : public ::testing::Test {};
+class QueueContract : public ::testing::Test {
+ protected:
+  using IntQueue = typename Family::template Queue<int>;
+  using MoveOnlyQueue = typename Family::template Queue<std::unique_ptr<int>>;
+};
 
 struct FamilyNames {
   // GoogleTest's name-generator API requires exactly this PascalCase name.
@@ -52,19 +58,19 @@ using AllFamilies = ::testing::Types<MutexFamily, SpscFamily, MpmcFamily>;
 TYPED_TEST_SUITE(QueueContract, AllFamilies, FamilyNames);
 
 TYPED_TEST(QueueContract, StartsEmptyWithGivenCapacity) {
-  const typename TypeParam::template Queue<int> q(4);
+  const typename TestFixture::IntQueue q(4);
   EXPECT_EQ(q.capacity(), 4U);
   EXPECT_EQ(q.size(), 0U);
   EXPECT_FALSE(q.closed());
 }
 
 TYPED_TEST(QueueContract, ZeroCapacityThrows) {
-  using IntQueue = typename TypeParam::template Queue<int>;
+  using IntQueue = typename TestFixture::IntQueue;
   EXPECT_THROW(IntQueue(0), std::invalid_argument);
 }
 
 TYPED_TEST(QueueContract, PopsInFifoOrder) {
-  typename TypeParam::template Queue<int> q(4);
+  typename TestFixture::IntQueue q(4);
   ASSERT_TRUE(q.push(1));
   ASSERT_TRUE(q.push(2));
   ASSERT_TRUE(q.push(3));
@@ -81,7 +87,7 @@ TYPED_TEST(QueueContract, PopsInFifoOrder) {
 
 TYPED_TEST(QueueContract, WrapsAroundRingBoundary) {
   constexpr int kRoundTrips = 10;
-  typename TypeParam::template Queue<int> q(2);
+  typename TestFixture::IntQueue q(2);
   int out = 0;
   for (int i = 0; i < kRoundTrips; ++i) {
     ASSERT_TRUE(q.push(i));
@@ -94,7 +100,7 @@ TYPED_TEST(QueueContract, WrapsAroundRingBoundary) {
 // catches off-by-one full detection in every ring layout (the SPSC ring's
 // spare slot, the MPMC ring's modular indexing).
 TYPED_TEST(QueueContract, FillsToExactlyCapacity) {
-  typename TypeParam::template Queue<int> q(3);
+  typename TestFixture::IntQueue q(3);
   EXPECT_TRUE(q.try_push(1));
   EXPECT_TRUE(q.try_push(2));
   EXPECT_TRUE(q.try_push(3));
@@ -103,7 +109,7 @@ TYPED_TEST(QueueContract, FillsToExactlyCapacity) {
 }
 
 TYPED_TEST(QueueContract, TryPushFailsWhenFull) {
-  typename TypeParam::template Queue<int> q(2);
+  typename TestFixture::IntQueue q(2);
   EXPECT_TRUE(q.try_push(1));
   EXPECT_TRUE(q.try_push(2));
   EXPECT_FALSE(q.try_push(3));
@@ -111,13 +117,13 @@ TYPED_TEST(QueueContract, TryPushFailsWhenFull) {
 }
 
 TYPED_TEST(QueueContract, TryPopFailsWhenEmpty) {
-  typename TypeParam::template Queue<int> q(2);
+  typename TestFixture::IntQueue q(2);
   int out = 0;
   EXPECT_FALSE(q.try_pop(out));
 }
 
 TYPED_TEST(QueueContract, SupportsMoveOnlyTypes) {
-  typename TypeParam::template Queue<std::unique_ptr<int>> q(2);
+  typename TestFixture::MoveOnlyQueue q(2);
   ASSERT_TRUE(q.push(std::make_unique<int>(42)));
 
   std::unique_ptr<int> out;
@@ -127,7 +133,7 @@ TYPED_TEST(QueueContract, SupportsMoveOnlyTypes) {
 }
 
 TYPED_TEST(QueueContract, PopBlocksUntilPush) {
-  typename TypeParam::template Queue<int> q(1);
+  typename TestFixture::IntQueue q(1);
   int out = 0;
   EXPECT_TRUE(test_util::run_blocked([&] { return q.pop(out); },  //
                                      [&] { EXPECT_TRUE(q.push(7)); }));
@@ -135,7 +141,7 @@ TYPED_TEST(QueueContract, PopBlocksUntilPush) {
 }
 
 TYPED_TEST(QueueContract, PushBlocksUntilPopWhenFull) {
-  typename TypeParam::template Queue<int> q(1);
+  typename TestFixture::IntQueue q(1);
   ASSERT_TRUE(q.push(1));
   int out = 0;
   EXPECT_TRUE(test_util::run_blocked([&] { return q.push(2); },
@@ -148,7 +154,7 @@ TYPED_TEST(QueueContract, PushBlocksUntilPopWhenFull) {
 }
 
 TYPED_TEST(QueueContract, PushAfterCloseFails) {
-  typename TypeParam::template Queue<int> q(2);
+  typename TestFixture::IntQueue q(2);
   q.close();
   EXPECT_TRUE(q.closed());
   EXPECT_FALSE(q.push(1));
@@ -156,7 +162,7 @@ TYPED_TEST(QueueContract, PushAfterCloseFails) {
 }
 
 TYPED_TEST(QueueContract, PopDrainsRemainingItemsAfterClose) {
-  typename TypeParam::template Queue<int> q(4);
+  typename TestFixture::IntQueue q(4);
   ASSERT_TRUE(q.push(1));
   ASSERT_TRUE(q.push(2));
   q.close();
@@ -171,14 +177,14 @@ TYPED_TEST(QueueContract, PopDrainsRemainingItemsAfterClose) {
 }
 
 TYPED_TEST(QueueContract, CloseWakesBlockedPop) {
-  typename TypeParam::template Queue<int> q(1);
+  typename TestFixture::IntQueue q(1);
   int out = 0;
   EXPECT_FALSE(test_util::run_blocked([&] { return q.pop(out); },  //
                                       [&] { q.close(); }));
 }
 
 TYPED_TEST(QueueContract, CloseWakesBlockedPush) {
-  typename TypeParam::template Queue<int> q(1);
+  typename TestFixture::IntQueue q(1);
   ASSERT_TRUE(q.push(1));
   EXPECT_FALSE(test_util::run_blocked([&] { return q.push(2); },  //
                                       [&] { q.close(); }));
