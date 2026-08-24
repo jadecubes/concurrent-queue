@@ -1,8 +1,5 @@
-// The family contract, written once: every queue in cq shares the same
-// bounded-FIFO close/drain interface by design, so the tests that express
-// that contract run as typed tests over all of them. Queue-specific behavior
-// (timed variants, index-cache paths, overflow guards) stays in the
-// per-queue test files.
+// The shared queue contract, run as typed tests over every queue.
+// Queue-specific behavior stays in the per-queue test files.
 
 #include <cq/mpmc_queue.hpp>
 #include <cq/mutex_queue.hpp>
@@ -19,8 +16,7 @@
 namespace cq {
 namespace {
 
-// Typed tests parametrize over one type, but a queue is a template — so the
-// parameter is a family tag carrying the template as an alias.
+// Typed tests take one type; a queue is a template, so wrap it in a tag.
 struct MutexFamily {
   template <typename T>
   using Queue = MutexQueue<T>;
@@ -37,8 +33,7 @@ struct MpmcFamily {
   static constexpr const char* kName = "Mpmc";
 };
 
-// The fixture spells out the dependent-template names once, so the tests can
-// say TestFixture::IntQueue instead of TypeParam::template Queue<int>.
+// Spell the dependent type names once.
 template <typename Family>
 class QueueContract : public ::testing::Test {
  protected:
@@ -47,7 +42,7 @@ class QueueContract : public ::testing::Test {
 };
 
 struct FamilyNames {
-  // GoogleTest's name-generator API requires exactly this PascalCase name.
+  // Name fixed by GoogleTest's API.
   template <typename Family>
   static std::string GetName(int /*index*/) {  // NOLINT(readability-identifier-naming)
     return Family::kName;
@@ -96,9 +91,7 @@ TYPED_TEST(QueueContract, WrapsAroundRingBoundary) {
   }
 }
 
-// Capacity 3 on purpose: a non-power-of-two, not-a-slot-count-plus-one size
-// catches off-by-one full detection in every ring layout (the SPSC ring's
-// spare slot, the MPMC ring's modular indexing).
+// Non-power-of-two capacity catches off-by-one full detection in every ring.
 TYPED_TEST(QueueContract, FillsToExactlyCapacity) {
   typename TestFixture::IntQueue q(3);
   EXPECT_TRUE(q.try_push(1));

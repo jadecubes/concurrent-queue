@@ -1,6 +1,5 @@
-// SpscQueue-specific tests: the capacity+1 overflow guard and the v2.1
-// peer-index-cache paths. The family-wide contract is covered once for all
-// queues in queue_contract_test.cpp.
+// SpscQueue-specific tests (overflow guard, v2.1 cache paths); the shared
+// contract lives in queue_contract_test.cpp.
 
 #include <cq/spsc_queue.hpp>
 
@@ -14,18 +13,13 @@ namespace cq {
 namespace {
 
 TEST(SpscQueue, MaxCapacityThrows) {
-  // The ring allocates capacity + 1 slots; SIZE_MAX would wrap that to 0 and
-  // silently construct a broken queue instead of failing to allocate.
+  // capacity + 1 would wrap SIZE_MAX to 0 and build a broken ring.
   constexpr auto kMaxCapacity = std::numeric_limits<std::size_t>::max();
   EXPECT_THROW(SpscQueue<int>{kMaxCapacity}, std::length_error);
 }
 
-// A one-slot ring is full after every push and empty after every pop, so each
-// side's cached view of the opposite index is stale on every single operation
-// and has to be refreshed. An implementation that consults its cache but never
-// re-reads the real index fails at the first try_pop — its tail cache never
-// learns of the push (the fresh zero cache happens to license the first push,
-// and the blocking variants would spin forever instead of returning false).
+// One slot: both caches are stale on every op and must refresh. A cache-only
+// implementation fails at the first try_pop (a blocking pop would spin).
 TEST(SpscQueue, SingleSlotRingAlternatesPushAndPop) {
   constexpr int kRoundTrips = 100;
   SpscQueue<int> q(1);
@@ -39,9 +33,8 @@ TEST(SpscQueue, SingleSlotRingAlternatesPushAndPop) {
   }
 }
 
-// Fill to capacity, drain to empty, repeat. Each cycle walks both sides from
-// "cache says there is room/data" through the stale-cache refresh and back,
-// and enough cycles to carry the ring past its wrap point several times.
+// Fill/drain cycles walk the stale-cache refresh path and wrap the ring
+// repeatedly.
 TEST(SpscQueue, RepeatedFillAndDrainCyclesPreserveFifoOrder) {
   constexpr int kCycles = 20;
   constexpr int kCapacity = 3;

@@ -1,7 +1,5 @@
-// Checksum stress gate (see README correctness policy): N producers push
-// known values, consumers' totals must reconcile. Run under ThreadSanitizer.
-// One templated gate serves every queue variant; each variant registers the
-// thread shapes its contract allows.
+// Checksum stress gate (README correctness policy): producers push known
+// values, consumers' totals must reconcile. Run under ThreadSanitizer.
 
 #include <cq/mpmc_queue.hpp>
 #include <cq/mutex_queue.hpp>
@@ -18,8 +16,7 @@
 namespace cq {
 namespace {
 
-// The thread shape of one gate run. A struct rather than a parameter list so
-// the counts cannot be swapped silently at a call site.
+// One gate run's thread shape; a struct so counts can't be swapped.
 struct GateShape {
   int producers;
   int consumers;
@@ -27,10 +24,8 @@ struct GateShape {
   std::size_t capacity;
 };
 
-// Producer p pushes the contiguous block [p*items + 1, (p+1)*items], so the
-// grand total is 1..producers*items and the expected sum is closed-form.
-// A capacity far below the item count keeps the ring wrapping and filling
-// constantly; capacity 1 makes every item a full handoff.
+// Producer p pushes [p*items + 1, (p+1)*items]: the grand total is 1..N
+// with a closed-form sum. A small capacity keeps the ring wrapping.
 template <typename Queue>
 void run_checksum_gate(GateShape shape) {
   const auto items_per_producer = shape.items_per_producer;
@@ -81,15 +76,14 @@ TEST(MutexQueueStress, ChecksumReconcilesAcrossProducersAndConsumers) {
   run_checksum_gate<MutexQueue<std::uint64_t>>(kShape);
 }
 
-// SPSC contract: exactly one producer thread and one consumer thread.
+// SPSC contract: one producer, one consumer.
 TEST(SpscQueueStress, ChecksumReconcilesAcrossProducerAndConsumer) {
   constexpr auto kShape =
       GateShape{.producers = 1, .consumers = 1, .items_per_producer = 100'000, .capacity = 64};
   run_checksum_gate<SpscQueue<std::uint64_t>>(kShape);
 }
 
-// A one-slot ring makes every item a full handoff — each side's index cache
-// is stale on every operation and must refresh.
+// One slot: every item is a full handoff, every cache refresh forced.
 TEST(SpscQueueStress, SingleSlotRingHandsOffEveryItem) {
   constexpr auto kShape =
       GateShape{.producers = 1, .consumers = 1, .items_per_producer = 20'000, .capacity = 1};
@@ -102,8 +96,7 @@ TEST(MpmcQueueStress, ChecksumReconcilesAcrossProducersAndConsumers) {
   run_checksum_gate<MpmcQueue<std::uint64_t>>(kShape);
 }
 
-// The tightest interleaving the MPMC queue allows: every producer/consumer
-// pair races for the same cell's sequence counter on every item.
+// One slot: every pair races for the same cell's sequence counter.
 TEST(MpmcQueueStress, SingleSlotRingHandsOffEveryItem) {
   constexpr auto kShape =
       GateShape{.producers = 2, .consumers = 2, .items_per_producer = 5'000, .capacity = 1};
