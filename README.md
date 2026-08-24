@@ -17,13 +17,17 @@ industrial implementations.
   caller-supplied bound (`try_push_for` / `try_pop_for`).
 - **v2 — lock-free SPSC ring buffer with atomics.** Same ring storage, no
   lock. Measure the difference against v1 with Google Benchmark.
+  *(v2.1 added a cached peer index on each side — see Results.)*
 - **v2.5 — bounded MPMC queue** (Vyukov-style, per-slot sequence counters).
 - **v3 — compare against moodycamel and TBB.** Run the same benchmarks against
   `moodycamel::ConcurrentQueue` and `tbb::concurrent_bounded_queue`, then
   write up why mine loses (or wins).
-- **Stretch — a thread pool** on top of the MPMC queue.
+- **Stretch — a thread pool** on top of the MPMC queue. *(Open.)*
 
-## Planned layout
+Everything above the stretch goal is implemented; the Results section below
+carries each step's measurements.
+
+## Layout
 
 ```
 include/cq/     header-only queue implementations
@@ -192,4 +196,49 @@ matches the v3 finding on the same machine that `tbb::concurrent_bounded_queue`
 each producer its own sub-queue instead of one shared ring. Lock-free buys
 progress guarantees, not throughput.
 
-_v3 (vs moodycamel and TBB, including this queue) to follow._
+### v3 — versus the industry (moodycamel, TBB)
+
+The roadmap's destination: the whole family against two industrial queues, in
+one binary and one session (moodycamel `concurrentqueue` v1.0.4, oneTBB
+v2022.2.0; load average ~4). Every control reproduced its own table above
+within noise, which is what makes the columns comparable. Contract differences
+the numbers must be read against: `tbb::concurrent_bounded_queue` matches the
+family contract (bounded, blocking, MPMC); `moodycamel::ConcurrentQueue` is
+**unbounded** (producers never wait) and FIFO only **per producer** — it is
+answering an easier question, and still gets to count the same ops.
+
+| ops/s, mean ± stddev | v1 mutex | v2.1 SPSC | v2.5 MPMC | tbb bounded | moodycamel |
+|---|---|---|---|---|---|
+| single-thread round trip | 104.5M ± 0.2M | 1.54G ± 0.01G | 277.7M ± 0.8M | 113.3M ± 0.4M | 165.8M ± 1.9M |
+| 2 threads (1p + 1c) | 34.2M ± 0.4M | **602M ± 11M** | 216.2M ± 4.7M | 22.6M ± 2.0M | 78.9M ± 2.6M |
+| 8 threads (4p + 4c) | **21.0M ± 0.2M** | — | 13.6M ± 0.7M | 16.5M ± 0.5M | **43.5M ± 2.9M** |
+
+Three findings:
+
+**On the MPMC shape, the ranking is moodycamel > mutex > TBB > our Vyukov.**
+Written plainly: the queue this repo built for the MPMC job finishes last on
+it, and the two ticket-based designs (ours and TBB's) both lose to a plain
+mutex. The mechanism (inferred from the numbers, not profiled): every
+ticket-based operation is an atomic RMW on a counter all eight threads hammer,
+and under full contention the CAS retry traffic costs more than the mutex's
+polite futex queue, where losers sleep instead of re-fetching cache lines.
+moodycamel escapes the same trap structurally — a sub-queue per producer means
+producers never contend with each other — but pays for it with the weaker
+per-producer-FIFO contract.
+
+**With little or no contention, the specialized designs win big.** Our SPSC
+ring at 1p+1c (602M ops/s) is 7.6× moodycamel and 27× TBB; even our Vyukov
+queue at 1p+1c (216M) is 2.7× moodycamel and 9.6× TBB — shared-counter designs
+fly when only two threads share the counters. Specialization to the actual
+concurrency shape buys more than any amount of generic cleverness.
+
+**Nobody beats the mutex at 4p+4c except moodycamel** — and it changes the
+contract to do so. That is the honest summary of what lock-free bought this
+repo: enormous wins where contention is structurally limited (SPSC), progress
+guarantees everywhere, and a throughput *loss* under real MPMC contention.
+"Why mine loses": ours keeps global FIFO and bounded semantics on one shared
+ring; the winner gave those up.
+
+As everywhere above, these are ops/s — halve for items/s.
+
+_Roadmap complete through v3. Stretch (a thread pool) remains._

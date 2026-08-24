@@ -1,5 +1,17 @@
-// Throughput benchmarks for the cq queues (v1 MutexQueue baseline and the v2
-// lock-free SpscQueue), sharing one harness so the numbers compare directly.
+// Throughput benchmarks for the cq queues (v1 MutexQueue, the v2.1 SpscQueue,
+// and the v2.5 MpmcQueue) against two industrial queues (roadmap v3):
+// moodycamel::ConcurrentQueue and tbb::concurrent_bounded_queue. One templated
+// harness runs every queue so the numbers compare directly.
+//
+// The contenders do not share our exact contract, so each gets a thin adapter
+// and the differences are stated here rather than papered over:
+//   - tbb::concurrent_bounded_queue is the close match: bounded, blocking
+//     push/pop, MPMC. Its push/pop return void; the adapter returns true.
+//   - moodycamel::ConcurrentQueue is UNBOUNDED and non-blocking, and is FIFO
+//     only per producer, not across producers. Producers therefore never
+//     block (an advantage the writeup must discount), and the adapter's pop
+//     spins on try_dequeue with a yield, the usual shape for a non-blocking
+//     consumer.
 //
 // Each benchmark uses Google Benchmark's multi-thread support: the first half
 // of the threads produce, the second half consume, one queue op per benchmark
@@ -20,12 +32,57 @@
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
+#include <thread>
 
 #include <benchmark/benchmark.h>
+#include <concurrentqueue.h>
+#include <tbb/concurrent_queue.h>
 
 namespace {
 
 constexpr std::size_t kCapacity = 1024;
+
+// Adapters onto the harness's shape: bool push(T), bool try_push(T),
+// bool pop(T&).
+
+class TbbBoundedQueue {
+ public:
+  explicit TbbBoundedQueue(std::size_t capacity) {
+    queue_.set_capacity(static_cast<std::ptrdiff_t>(capacity));
+  }
+
+  bool push(std::uint64_t value) {
+    queue_.push(value);  // blocks while full
+    return true;
+  }
+  bool try_push(std::uint64_t value) { return queue_.try_push(value); }
+  bool pop(std::uint64_t& out) {
+    queue_.pop(out);  // blocks while empty
+    return true;
+  }
+
+ private:
+  tbb::concurrent_bounded_queue<std::uint64_t> queue_;
+};
+
+class MoodycamelQueue {
+ public:
+  // The "capacity" only pre-sizes the block pool; the queue stays unbounded.
+  explicit MoodycamelQueue(std::size_t capacity) : queue_(capacity) {}
+
+  bool push(std::uint64_t value) { return queue_.enqueue(value); }
+  // Same as push: an unbounded queue has no "full" to refuse on.
+  bool try_push(std::uint64_t value) { return queue_.enqueue(value); }
+  bool pop(std::uint64_t& out) {
+    while (!queue_.try_dequeue(out)) {
+      std::this_thread::yield();
+    }
+    return true;
+  }
+
+ private:
+  moodycamel::ConcurrentQueue<std::uint64_t> queue_;
+};
 
 // Created/destroyed by the Setup/Teardown hooks below, which run once per
 // repetition outside the threaded region. One instance per queue type.
@@ -131,6 +188,24 @@ BENCHMARK(BM_QueueThroughput<MpmcQueue>)
     ->MinTime(kMinTimeSeconds)
     ->Name("MpmcQueue/throughput");
 
+BENCHMARK(BM_QueueThroughput<TbbBoundedQueue>)
+    ->Setup(setup_queue<TbbBoundedQueue>)
+    ->Teardown(teardown_queue<TbbBoundedQueue>)
+    ->Threads(kSpscThreads)
+    ->Threads(kMpmcThreads)
+    ->UseRealTime()
+    ->MinTime(kMinTimeSeconds)
+    ->Name("TbbBoundedQueue/throughput");
+
+BENCHMARK(BM_QueueThroughput<MoodycamelQueue>)
+    ->Setup(setup_queue<MoodycamelQueue>)
+    ->Teardown(teardown_queue<MoodycamelQueue>)
+    ->Threads(kSpscThreads)
+    ->Threads(kMpmcThreads)
+    ->UseRealTime()
+    ->MinTime(kMinTimeSeconds)
+    ->Name("MoodycamelQueue/throughput");
+
 BENCHMARK(BM_QueuePushPopSingleThread<MutexQueue>)
     ->MinTime(kMinTimeSeconds)
     ->Name("MutexQueue/single_thread_roundtrip");
@@ -142,5 +217,13 @@ BENCHMARK(BM_QueuePushPopSingleThread<SpscQueue>)
 BENCHMARK(BM_QueuePushPopSingleThread<MpmcQueue>)
     ->MinTime(kMinTimeSeconds)
     ->Name("MpmcQueue/single_thread_roundtrip");
+
+BENCHMARK(BM_QueuePushPopSingleThread<TbbBoundedQueue>)
+    ->MinTime(kMinTimeSeconds)
+    ->Name("TbbBoundedQueue/single_thread_roundtrip");
+
+BENCHMARK(BM_QueuePushPopSingleThread<MoodycamelQueue>)
+    ->MinTime(kMinTimeSeconds)
+    ->Name("MoodycamelQueue/single_thread_roundtrip");
 
 }  // namespace
