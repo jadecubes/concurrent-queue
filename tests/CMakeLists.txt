@@ -1,5 +1,7 @@
 add_executable(queue_tests
   mutex_queue_test.cpp
+  mpmc_queue_test.cpp
+  spsc_queue_test.cpp
   stress_test.cpp)
 target_link_libraries(queue_tests PRIVATE cq::cq cq_warnings cq_sanitizers GTest::gtest_main)
 

@@ -88,4 +88,108 @@ one — worth remembering before crediting v2 with the whole gap. Second, the
 numbers above are ops/s; halve them for items transferred per second
 (SPSC ≈ 17.9M items/s, MPMC ≈ 10.8M).
 
-_v2 → v3 to follow._
+### v2 — SpscQueue (lock-free SPSC ring)
+
+Same machine and harness, measured in one session with v1 re-run alongside
+(load average ~4.1; v1's SPSC figure reproduced at 35.8M ± 0.6M ops/s, within
+noise of the table above — the ratios below use the same-session numbers). An
+earlier session on a busier machine recorded 252M ± 55M for the SPSC pair with
+a 21.9% CV; the spread was the tell, and the re-measured figures below replace
+it.
+
+| Benchmark (v2 SpscQueue) | Throughput | Per op | CV |
+|---|---|---|---|
+| single-thread push+pop round trip | 2.00G ± 0.01G ops/s | 0.50 ns (1.00 ns per round trip) | 0.7% |
+| SPSC (1 producer, 1 consumer) | 369M ± 14M ops/s | 2.7 ns | 3.9% |
+
+The v2 story: dropping the mutex buys **~10× on the SPSC pair** (369M vs
+35.8M ops/s) and **~19× on the uncontended round trip**, where an op is a
+handful of instructions with no atomic read-modify-write — each side loads the
+other side's index and release-stores its own. The new cost center is the
+cache coherence traffic itself: the same ring that moves 2.00G ops/s on one
+core drops to 369M when producer and consumer sit on different cores and the
+`head_`/`tail_` lines ping-pong between them. Caching the last-seen peer index
+to skip most of those loads is the classic next step, left for a v2.x once the
+unoptimized gap is on record.
+
+### v2.1 — cached peer indices
+
+(Numbered v2.1, not v2.5: the roadmap reserves v2.5 for the Vyukov-style
+MPMC queue, and this is the "v2.x" follow-up the section above named.)
+
+Same machine and harness. v2 was rebuilt from its own commit and run
+alternately with v2.1 in one session (load average ~4.9), so both columns come
+from the same conditions, and v1 ran inside both binaries as a control —
+reproducing within 2% (35.4M vs 36.3M ops/s on SPSC), which is what makes the
+comparison below worth reading.
+
+The change: each side keeps a private, non-atomic copy of the last value it
+read from the opposite index and consults that before touching the real one.
+Because both indices only ever advance, a cached value that says "not full" /
+"not empty" cannot be wrong — so a steady stream never reads the peer's cache
+line at all, and only a ring that has actually run empty or full pays to
+refresh.
+
+| Benchmark | v2 | v2.1 | change |
+|---|---|---|---|
+| SPSC (1 producer, 1 consumer) | 361.7M ± 10.9M ops/s (5.53 ns, CV 3.0%) | **613.7M ± 6.3M ops/s** (3.26 ns, CV 1.0%) | **1.70× faster** |
+| single-thread push+pop round trip | 2.006G ± 0.005G ops/s (0.998 ns, CV 0.2%) | 1.555G ± 0.005G ops/s (1.29 ns, CV 0.3%) | **0.77× — 23% slower** |
+
+The optimization does what it was meant to on the benchmark that reflects the
+queue's purpose, and it costs something real on the one that does not. That
+regression is not incidental. The round-trip benchmark pushes one item and
+immediately pops it, so the ring sits pinned at empty and *every* pop finds
+its cache stale: it pays the extra compare and the write-back on every single
+operation and never once gets to skip a peer read. That is precisely the
+cache's worst case. A ring with slack — the SPSC benchmark, and any real
+stream — skips nearly all of them. Worth stating plainly rather than quoting
+only the number that flatters the change.
+
+The v2 column here (361.7M ops/s) independently agrees with the re-measured
+figure in the v2 table above (369M ± 14M) — both sessions replaced an early
+noisy sample (252M, CV 21.9%) taken on a busier machine. Against the
+same-session v1 baseline, **v2 is ~10× v1** and **v2.1 is ~17×** (613.7M vs
+35.4M ops/s).
+
+Where the remaining time goes: at 3.26 ns per op the pair is dominated by the
+handoff itself — the producer's release store to `tail_` still has to reach the
+consumer's core before the consumer can advance, and no amount of caching
+removes that dependency. Publishing an index once per batch of N items is what
+buys the next factor, and it trades latency to get it.
+
+### v2.5 — MpmcQueue (Vyukov bounded MPMC)
+
+Same machine and harness, one session containing v1, v2.1, and v2.5 (load
+average ~5–6); the controls reproduced their tables above within noise (v1
+SPSC 36.2M vs 36.3M, v2.1 SPSC 621.6M vs 613.7M ops/s), which is what makes
+the columns comparable.
+
+The design is Dmitry Vyukov's bounded MPMC queue: each slot carries its own
+sequence counter and the two position counters only hand out tickets, so
+producers synchronize with consumers per slot rather than through one shared
+index pair. Two deviations from the canonical version, both for contract
+parity with the other queues: capacity is arbitrary (indexing by modulo, not
+a power-of-two mask), and the sequence encoding is doubled — free = 2·ticket,
+full = 2·ticket + 1 — because the classic encoding collides at capacity 1,
+where "holds ticket t's data" and "free for ticket t+1" are the same number.
+
+| Benchmark (v2.5 MpmcQueue) | Throughput | vs v1 same shape | CV |
+|---|---|---|---|
+| single-thread push+pop round trip | 286M ± 1M ops/s | 2.7× | 0.3% |
+| 2 threads (1 producer, 1 consumer) | 224M ± 4M ops/s | 6.2× | 1.6% |
+| 8 threads (4 producers, 4 consumers) | **13.3M ± 0.6M ops/s** | **0.62× — slower than the mutex** | 4.3% |
+
+The result worth stating plainly: on the MPMC shape this queue exists for, it
+**loses to the v1 mutex baseline** (13.3M vs 21.6M ops/s), while winning the
+shapes with little or no contention. A mechanistic reading (from the shape of
+the numbers, not from profiling): every operation is an atomic RMW on one of
+two position counters that all eight threads hammer, plus a slot-sequence
+handoff — under full contention the CAS retry traffic thrashes exactly the
+cache lines the SPSC ring so carefully avoided, whereas the mutex serializes
+politely through one futex and the losers sleep instead of retrying. This
+matches the v3 finding on the same machine that `tbb::concurrent_bounded_queue`
+(also ticket-based) loses to the mutex too, and it is why moodycamel gives
+each producer its own sub-queue instead of one shared ring. Lock-free buys
+progress guarantees, not throughput.
+
+_v3 (vs moodycamel and TBB, including this queue) to follow._
