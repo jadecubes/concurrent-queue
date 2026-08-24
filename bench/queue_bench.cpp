@@ -1,28 +1,16 @@
-// Throughput benchmarks for the cq queues (v1 MutexQueue, the v2.1 SpscQueue,
-// and the v2.5 MpmcQueue) against two industrial queues (roadmap v3):
-// moodycamel::ConcurrentQueue and tbb::concurrent_bounded_queue. One templated
-// harness runs every queue so the numbers compare directly.
+// Throughput benchmarks: the cq queues vs moodycamel::ConcurrentQueue and
+// tbb::concurrent_bounded_queue (roadmap v3), all on one templated harness.
 //
-// The contenders do not share our exact contract, so each gets a thin adapter
-// and the differences are stated here rather than papered over:
-//   - tbb::concurrent_bounded_queue is the close match: bounded, blocking
-//     push/pop, MPMC. Its push/pop return void; the adapter returns true.
-//   - moodycamel::ConcurrentQueue is UNBOUNDED and non-blocking, and is FIFO
-//     only per producer, not across producers. Producers therefore never
-//     block (an advantage the writeup must discount), and the adapter's pop
-//     spins on try_dequeue with a yield, the usual shape for a non-blocking
-//     consumer.
+// Adapter caveats, stated rather than papered over:
+//   - tbb bounded: the close match (bounded, blocking, MPMC); its void
+//     push/pop are adapted to return true.
+//   - moodycamel: UNBOUNDED and FIFO only per producer — producers never
+//     block, an advantage the writeup must discount. Its pop spins + yields.
 //
-// Each benchmark uses Google Benchmark's multi-thread support: the first half
-// of the threads produce, the second half consume, one queue op per benchmark
-// iteration. Every thread runs the same iteration count, so pushes and pops
-// balance and the harness keeps full control of run length. Reported items/s
-// is total queue ops per second (a push and its pop count as two).
-//
-// Threads synchronize on Google Benchmark's start barrier before timing
-// resumes, so spawn cost is outside the timed region. The registrations below
-// set MinTime so a bare run is already long enough to be meaningful; add
-// repetitions for a spread: ./queue_bench --benchmark_repetitions=10
+// Shape: the first half of the threads push, the second half pop, one op per
+// iteration, so pushes and pops balance. items/s = total ops/s (a push and
+// its pop count as two). Spawn cost sits outside the timed region; add
+// --benchmark_repetitions=10 for a spread.
 
 #include <cq/mpmc_queue.hpp>
 #include <cq/mutex_queue.hpp>
@@ -42,8 +30,7 @@ namespace {
 
 constexpr std::size_t kCapacity = 1024;
 
-// Adapters onto the harness's shape: bool push(T), bool try_push(T),
-// bool pop(T&).
+// Adapters onto the harness's shape: bool push / try_push / pop.
 
 class TbbBoundedQueue {
  public:

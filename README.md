@@ -198,14 +198,11 @@ progress guarantees, not throughput.
 
 ### v3 — versus the industry (moodycamel, TBB)
 
-The roadmap's destination: the whole family against two industrial queues, in
-one binary and one session (moodycamel `concurrentqueue` v1.0.4, oneTBB
-v2022.2.0; load average ~4). Every control reproduced its own table above
-within noise, which is what makes the columns comparable. Contract differences
-the numbers must be read against: `tbb::concurrent_bounded_queue` matches the
-family contract (bounded, blocking, MPMC); `moodycamel::ConcurrentQueue` is
-**unbounded** (producers never wait) and FIFO only **per producer** — it is
-answering an easier question, and still gets to count the same ops.
+The whole family against two industrial queues, one binary, one session
+(moodycamel v1.0.4, oneTBB v2022.2.0; load ~4); every control reproduced its
+table above within noise. Read against the contracts: tbb's bounded queue
+matches ours; `moodycamel::ConcurrentQueue` is **unbounded** and FIFO only
+**per producer** — an easier question, counting the same ops.
 
 | ops/s, mean ± stddev | v1 mutex | v2.1 SPSC | v2.5 MPMC | tbb bounded | moodycamel |
 |---|---|---|---|---|---|
@@ -216,28 +213,23 @@ answering an easier question, and still gets to count the same ops.
 Three findings:
 
 **On the MPMC shape, the ranking is moodycamel > mutex > TBB > our Vyukov.**
-Written plainly: the queue this repo built for the MPMC job finishes last on
-it, and the two ticket-based designs (ours and TBB's) both lose to a plain
-mutex. The mechanism (inferred from the numbers, not profiled): every
-ticket-based operation is an atomic RMW on a counter all eight threads hammer,
-and under full contention the CAS retry traffic costs more than the mutex's
-polite futex queue, where losers sleep instead of re-fetching cache lines.
-moodycamel escapes the same trap structurally — a sub-queue per producer means
-producers never contend with each other — but pays for it with the weaker
+The queue built for the MPMC job finishes last on it, and both ticket-based
+designs lose to a plain mutex: every ticketed op is an atomic RMW on a counter
+all eight threads hammer, and the CAS retry traffic (inferred, not profiled)
+costs more than the mutex's futex queue, where losers sleep. moodycamel
+escapes structurally — a sub-queue per producer — and pays with the weaker
 per-producer-FIFO contract.
 
-**With little or no contention, the specialized designs win big.** Our SPSC
-ring at 1p+1c (602M ops/s) is 7.6× moodycamel and 27× TBB; even our Vyukov
-queue at 1p+1c (216M) is 2.7× moodycamel and 9.6× TBB — shared-counter designs
-fly when only two threads share the counters. Specialization to the actual
-concurrency shape buys more than any amount of generic cleverness.
+**With little contention, the specialized designs win big.** Our SPSC ring
+at 1p+1c (602M ops/s) is 7.6× moodycamel and 27× TBB; even our Vyukov at
+1p+1c (216M) is 2.7× moodycamel. Specializing to the actual concurrency shape
+buys more than generic cleverness.
 
-**Nobody beats the mutex at 4p+4c except moodycamel** — and it changes the
-contract to do so. That is the honest summary of what lock-free bought this
-repo: enormous wins where contention is structurally limited (SPSC), progress
-guarantees everywhere, and a throughput *loss* under real MPMC contention.
-"Why mine loses": ours keeps global FIFO and bounded semantics on one shared
-ring; the winner gave those up.
+**Nobody beats the mutex at 4p+4c except moodycamel — by changing the
+contract.** What lock-free bought this repo: big wins where contention is
+structurally limited, progress guarantees everywhere, a throughput *loss*
+under real MPMC contention. "Why mine loses": ours keeps global FIFO and
+bounded semantics on one shared ring; the winner gave those up.
 
 As everywhere above, these are ops/s — halve for items/s.
 

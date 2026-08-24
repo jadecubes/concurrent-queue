@@ -1,5 +1,4 @@
-# 3.25 for FetchContent's SYSTEM option: third-party headers are included as
-# system headers so our warning flags don't fire inside them.
+# 3.25 for FetchContent SYSTEM: keeps our warning flags out of third-party headers.
 cmake_minimum_required(VERSION 3.25)
 
 project(concurrent_queue
@@ -75,8 +74,7 @@ if(CQ_BUILD_BENCHMARKS)
   set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
   set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
 
-  # The v3 comparison targets (benchmark-only dependencies): moodycamel's
-  # ConcurrentQueue (header-only) and oneTBB's concurrent_bounded_queue.
+  # The v3 comparison targets (benchmark-only deps).
   FetchContent_Declare(
     concurrentqueue
     URL https://github.com/cameron314/concurrentqueue/archive/refs/tags/v1.0.4.tar.gz
