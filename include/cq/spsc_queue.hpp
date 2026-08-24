@@ -5,16 +5,18 @@
 #include <cstddef>
 #include <vector>
 
+#include "cq/backoff.hpp"
 #include "cq/cache_line.hpp"
 
 namespace cq {
 
 /// v2: bounded FIFO ring for exactly one producer thread and one consumer
 /// thread, synchronized with atomics only — no mutex, no condition variables.
-/// The blocking push()/pop() spin with std::this_thread::yield() instead of
-/// sleeping. Each side caches the peer's index (added in v2.1), so a steady
-/// stream of pushes and pops decides "there is room" / "there is data"
-/// without touching the other core's cache line.
+/// The blocking push()/pop() spin briefly, then sleep with doubling timed
+/// backoff — near-zero CPU while blocked, wakeup within kMaxSleep. Each side
+/// caches the peer's index (added in v2.1), so a steady stream of pushes and
+/// pops decides "there is room" / "there is data" without touching the other
+/// core's cache line.
 ///
 /// Thread-safety: at most one thread may call the producer side (push,
 /// try_push) and at most one thread the consumer side (pop, try_pop),
@@ -34,7 +36,7 @@ namespace cq {
 ///   constructed up front) and MoveAssignable.
 template <typename T>
 // The "excessive padding" the analyzer flags is deliberate: head_ and tail_
-// each get a private cache line (see kCacheLineSize above).
+// each get a private cache line (see cq/cache_line.hpp).
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class SpscQueue {
  public:
@@ -51,7 +53,8 @@ class SpscQueue {
   SpscQueue(SpscQueue&&) = delete;
   SpscQueue& operator=(SpscQueue&&) = delete;
 
-  /// Enqueues a value, spinning while the queue is full. Producer side.
+  /// Enqueues a value, waiting while the queue is full (brief spin, then a
+  /// timed sleep — near-zero CPU while blocked). Producer side.
   /// @param value Element to enqueue; consumed even when the push fails.
   /// @return false if the queue is closed (the value is dropped).
   [[nodiscard]] bool push(T value);
@@ -61,8 +64,8 @@ class SpscQueue {
   /// @return false if the queue is full or closed.
   [[nodiscard]] bool try_push(T value);
 
-  /// Dequeues into out, spinning while the queue is empty and open.
-  /// Consumer side.
+  /// Dequeues into out, waiting while the queue is empty and open (brief
+  /// spin, then a timed sleep). Consumer side.
   /// @param[out] out Receives the dequeued element on success.
   /// @return false once the queue is closed and drained.
   [[nodiscard]] bool pop(T& out);
@@ -73,9 +76,23 @@ class SpscQueue {
   /// @return false if the queue is empty.
   [[nodiscard]] bool try_pop(T& out);
 
+  /// Moves up to n items from items[0..n) into the ring with a single index
+  /// publish — the batched-publish optimization. Producer side.
+  /// @param items Source array; the first k elements are moved from.
+  /// @param n Maximum number of items to enqueue.
+  /// @return k, the number enqueued (0 if the ring is full or closed).
+  [[nodiscard]] std::size_t try_push_n(T* items, std::size_t n);
+
+  /// Moves up to n items into out[0..n) with a single index publish.
+  /// Consumer side.
+  /// @param[out] out Destination array; the first k elements are written.
+  /// @param n Maximum number of items to dequeue.
+  /// @return k, the number dequeued (0 if the ring is empty).
+  [[nodiscard]] std::size_t try_pop_n(T* out, std::size_t n);
+
   /// Closes the queue: push() and try_push() refuse new values, pop() drains
   /// what remains and then returns false. Idempotent; callable from any
-  /// thread. Spinning push()/pop() calls return once they observe the close.
+  /// thread. Waiting push()/pop() calls wake and return.
   ///
   /// To guarantee the consumer drains every item, stop the producer before
   /// calling close(): a push racing with close() may enqueue an item after

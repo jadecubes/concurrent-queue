@@ -16,6 +16,7 @@
 #include <cq/mutex_queue.hpp>
 #include <cq/spsc_queue.hpp>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -136,6 +137,32 @@ using MpmcQueue = cq::MpmcQueue<std::uint64_t>;
 using MutexQueue = cq::MutexQueue<std::uint64_t>;
 using SpscQueue = cq::SpscQueue<std::uint64_t>;
 
+// SPSC bulk transfer: kBulkBatch items per call, one index publish per batch.
+// Each benchmark iteration moves one full batch on each side.
+constexpr std::size_t kBulkBatch = 64;
+void BM_SpscBulkThroughput(benchmark::State& state) {
+  const bool is_producer = state.thread_index() == 0;
+  auto& queue = *shared_queue<SpscQueue>;
+  std::array<std::uint64_t, kBulkBatch> buf{};
+  if (is_producer) {
+    for (auto _ : state) {
+      std::size_t done = 0;
+      while (done < kBulkBatch) {
+        done += queue.try_push_n(buf.data() + done, kBulkBatch - done);
+      }
+    }
+  } else {
+    for (auto _ : state) {
+      std::size_t done = 0;
+      while (done < kBulkBatch) {
+        done += queue.try_pop_n(buf.data() + done, kBulkBatch - done);
+      }
+    }
+  }
+  state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(kBulkBatch) *
+                          state.threads());
+}
+
 // SPSC: 1 producer + 1 consumer; MPMC: 4 + 4. Google Benchmark appends the
 // /threads:N suffix to the reported name. SpscQueue's contract allows one
 // thread per side, so it registers only the 2-thread shape.
@@ -165,6 +192,14 @@ BENCHMARK(BM_QueueThroughput<SpscQueue>)
     ->UseRealTime()
     ->MinTime(kMinTimeSeconds)
     ->Name("SpscQueue/throughput");
+
+BENCHMARK(BM_SpscBulkThroughput)
+    ->Setup(setup_queue<SpscQueue>)
+    ->Teardown(teardown_queue<SpscQueue>)
+    ->Threads(kSpscThreads)
+    ->UseRealTime()
+    ->MinTime(kMinTimeSeconds)
+    ->Name("SpscQueue/bulk64_throughput");
 
 BENCHMARK(BM_QueueThroughput<MpmcQueue>)
     ->Setup(setup_queue<MpmcQueue>)

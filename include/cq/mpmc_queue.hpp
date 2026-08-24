@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <vector>
 
+#include "cq/backoff.hpp"
 #include "cq/cache_line.hpp"
 
 namespace cq {
@@ -12,8 +13,9 @@ namespace cq {
 /// v2.5: bounded FIFO ring for any number of producer and consumer threads,
 /// synchronized with atomics only — Dmitry Vyukov's bounded MPMC design,
 /// where every slot carries its own sequence counter and the two position
-/// counters only hand out tickets. The blocking push()/pop() spin with
-/// std::this_thread::yield() instead of sleeping.
+/// counters only hand out tickets. The blocking push()/pop() spin briefly,
+/// then sleep with doubling timed backoff — near-zero CPU while blocked,
+/// wakeup within kMaxSleep.
 ///
 /// Thread-safety: after construction, all member functions may be called
 /// concurrently from any number of threads. closed() and size() return
@@ -34,7 +36,7 @@ namespace cq {
 ///   constructed up front) and MoveAssignable.
 template <typename T>
 // The "excessive padding" the analyzer flags is deliberate: each position
-// counter gets a private cache line (see kCacheLineSize).
+// counter gets a private cache line (see cq/cache_line.hpp).
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class MpmcQueue {
  public:
@@ -109,8 +111,13 @@ class MpmcQueue {
 
   [[nodiscard]] static std::vector<Slot> make_slots(std::size_t capacity);
 
+  // ticket -> slot position: a masked AND when capacity is a power of two,
+  // a division otherwise.
+  [[nodiscard]] std::size_t slot_index(std::size_t ticket) const noexcept;
+
   std::vector<Slot> slots_;
-  // Tickets only ever increase; a slot is addressed by ticket % slots_.size().
+  std::size_t mask_;  // slots_.size() - 1 if it is a power of two, else 0
+  // Tickets only ever increase; slot_index() maps them into the ring.
   // The counters are on separate lines: producers hammer one, consumers the
   // other, and the slots' own sequence counters carry the actual handoff.
   alignas(kCacheLineSize) std::atomic<std::size_t> enqueue_pos_ = 0;
