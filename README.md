@@ -116,6 +116,84 @@ the contract, so breaking it corrupts the queue with no diagnostic. This
 repository keeps both because measuring what that generality costs is the
 point of it.
 
+## Usage
+
+Header-only. Put `include/` on your include path and include the queue you
+picked above.
+
+The canonical producer/consumer shape — this compiles and runs as-is:
+
+```cpp
+#include <cq/mutex_queue.hpp>
+
+#include <iostream>
+#include <thread>
+
+int main() {
+  // Bounded: 64 slots. Declared before the threads, so it outlives them.
+  cq::MutexQueue<int> queue(64);
+  long long total = 0;
+
+  std::jthread producer([&queue] {
+    for (int i = 1; i <= 1000; ++i) {
+      if (!queue.push(i)) {  // false => the queue closed; stop early
+        return;
+      }
+    }
+    queue.close();  // done producing: lets the consumer drain and exit
+  });
+
+  std::jthread consumer([&queue, &total] {
+    int value = 0;
+    while (queue.pop(value)) {  // false => closed *and* drained
+      total += value;
+    }
+  });
+
+  producer.join();
+  consumer.join();
+  std::cout << "sum = " << total << '\n';  // 500500
+}
+```
+
+Two rules are doing the real work there, and both are easy to get wrong:
+
+- **Someone must call `close()`.** `pop` blocks while the queue is empty and
+  open, so without a close the consumer waits forever and the program hangs
+  instead of exiting. `pop` returns `false` only once the queue is closed
+  *and* drained, so closing loses nothing that was already pushed. With
+  several producers, join them all before closing.
+- **The queue must outlive the threads.** Declaring it before them is enough —
+  destruction runs in reverse, so the `jthread`s join first. Destroying a
+  queue while a thread sits in `push`/`pop` is undefined behavior.
+
+Every operation is `[[nodiscard]]`, because ignoring whether a push succeeded
+is almost always a bug.
+
+### When you cannot afford to block
+
+```cpp
+// Never wait: full is your problem to handle.
+if (!queue.try_push(item)) {
+  ++dropped;  // drop, retry, or push back on whatever produced it
+}
+
+// Wait, but not forever (MutexQueue only).
+int value = 0;
+if (queue.try_pop_for(value, std::chrono::milliseconds(100))) {
+  handle(value);
+} else if (queue.closed()) {
+  // shutting down — stop retrying, close() is one-way
+} else {
+  // timed out with the queue still empty
+}
+```
+
+`SpscQueue` and `MpmcQueue` are drop-in for everything above except the timed
+`try_*_for` pair, which only `MutexQueue` has. Swapping `MutexQueue` for
+`SpscQueue` in the first example is a one-line change — just make sure exactly
+one thread touches each side, since nothing checks it for you.
+
 ## Layout
 
 ```
