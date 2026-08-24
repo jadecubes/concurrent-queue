@@ -121,6 +121,9 @@ TEST(SpscQueue, TryPushNAfterCloseReturnsZero) {
   EXPECT_EQ(q.try_push_n(items.data(), items.size()), 0U);
 }
 
+// NOLINTBEGIN(clang-analyzer-cplusplus.NewDeleteLeaks): the analyzer cannot
+// see the ownership handoff through the ring on libstdc++ and reports a
+// false leak; the asserts below prove both pointers arrive intact.
 TEST(SpscQueue, BulkOpsSupportMoveOnlyTypes) {
   SpscQueue<std::unique_ptr<int>> q(4);
   std::array<std::unique_ptr<int>, 2> in = {std::make_unique<int>(1), std::make_unique<int>(2)};
@@ -131,6 +134,7 @@ TEST(SpscQueue, BulkOpsSupportMoveOnlyTypes) {
   EXPECT_EQ(*out[0], 1);
   EXPECT_EQ(*out[1], 2);
 }
+// NOLINTEND(clang-analyzer-cplusplus.NewDeleteLeaks)
 
 }  // namespace
 }  // namespace cq
