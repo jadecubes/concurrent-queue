@@ -107,7 +107,7 @@ class MutexQueue {
   [[nodiscard]] std::size_t size() const;
 
   /// @return Fixed capacity set at construction.
-  [[nodiscard]] std::size_t capacity() const;
+  [[nodiscard]] std::size_t capacity() const noexcept;
 
  private:
   // The *_locked helpers require mutex_ to be held by the caller.
@@ -121,7 +121,7 @@ class MutexQueue {
   [[nodiscard]] bool not_full_or_closed_locked() const;
   [[nodiscard]] bool not_empty_or_closed_locked() const;
 
-  [[nodiscard]] std::size_t next(std::size_t index) const;
+  [[nodiscard]] std::size_t next(std::size_t index) const noexcept;
 
   mutable std::mutex mutex_;
   std::condition_variable not_full_;
