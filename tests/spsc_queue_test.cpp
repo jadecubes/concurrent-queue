@@ -66,8 +66,8 @@ TEST(SpscQueue, TryPushNStopsAtCapacity) {
   SpscQueue<int> q(4);
   ASSERT_TRUE(q.try_push(0));
   ASSERT_TRUE(q.try_push(1));
-  std::array<int, 4> items = {2, 3, 4, 4};                  // the last item won't fit anyway
-  EXPECT_EQ(q.try_push_n(items.data(), items.size()), 2U);  // only two slots left
+  std::array<int, 4> items = {2, 3, 4, 4};  // the last item won't fit anyway
+  EXPECT_EQ(q.try_push_n(items), 2U);       // only two slots left
   EXPECT_EQ(q.size(), 4U);
   int out = 0;
   for (int expected = 0; expected < 4; ++expected) {
@@ -81,19 +81,19 @@ TEST(SpscQueue, TryPopNStopsAtAvailable) {
   ASSERT_TRUE(q.try_push(7));
   ASSERT_TRUE(q.try_push(8));
   std::array<int, 4> out = {};
-  EXPECT_EQ(q.try_pop_n(out.data(), out.size()), 2U);
+  EXPECT_EQ(q.try_pop_n(out), 2U);
   EXPECT_EQ(out[0], 7);
   EXPECT_EQ(out[1], 8);
-  EXPECT_EQ(q.try_pop_n(out.data(), out.size()), 0U);  // empty
+  EXPECT_EQ(q.try_pop_n(out), 0U);  // empty
 }
 
 TEST(SpscQueue, BulkAndSingleOpsInterleavePreservingFifo) {
   SpscQueue<int> q(3);
   std::array<int, 2> items = {1, 2};
-  EXPECT_EQ(q.try_push_n(items.data(), items.size()), 2U);
+  EXPECT_EQ(q.try_push_n(items), 2U);
   ASSERT_TRUE(q.try_push(3));
   std::array<int, 2> out = {};
-  EXPECT_EQ(q.try_pop_n(out.data(), out.size()), 2U);
+  EXPECT_EQ(q.try_pop_n(out), 2U);
   EXPECT_EQ(out[0], 1);
   EXPECT_EQ(out[1], 2);
   int single = 0;
@@ -107,8 +107,8 @@ TEST(SpscQueue, BulkOpsWrapTheRing) {
   std::array<int, 3> out = {};
   for (int cycle = 0; cycle < kCycles; ++cycle) {
     std::array<int, 3> items = {cycle * 3, (cycle * 3) + 1, (cycle * 3) + 2};
-    ASSERT_EQ(q.try_push_n(items.data(), items.size()), 3U);
-    ASSERT_EQ(q.try_pop_n(out.data(), out.size()), 3U);
+    ASSERT_EQ(q.try_push_n(items), 3U);
+    ASSERT_EQ(q.try_pop_n(out), 3U);
     EXPECT_EQ(out[0], cycle * 3);
     EXPECT_EQ(out[2], (cycle * 3) + 2);
   }
@@ -118,7 +118,7 @@ TEST(SpscQueue, TryPushNAfterCloseReturnsZero) {
   SpscQueue<int> q(4);
   q.close();
   std::array<int, 2> items = {1, 2};
-  EXPECT_EQ(q.try_push_n(items.data(), items.size()), 0U);
+  EXPECT_EQ(q.try_push_n(items), 0U);
 }
 
 // NOLINTBEGIN(clang-analyzer-cplusplus.NewDeleteLeaks): the analyzer cannot
@@ -127,10 +127,10 @@ TEST(SpscQueue, TryPushNAfterCloseReturnsZero) {
 TEST(SpscQueue, BulkOpsSupportMoveOnlyTypes) {
   SpscQueue<std::unique_ptr<int>> q(4);
   std::array<std::unique_ptr<int>, 2> in = {std::make_unique<int>(1), std::make_unique<int>(2)};
-  EXPECT_EQ(q.try_push_n(in.data(), in.size()), 2U);
+  EXPECT_EQ(q.try_push_n(in), 2U);
   EXPECT_EQ(in[0], nullptr) << "pushed items must be moved from";
   std::array<std::unique_ptr<int>, 2> out;
-  EXPECT_EQ(q.try_pop_n(out.data(), out.size()), 2U);
+  EXPECT_EQ(q.try_pop_n(out), 2U);
   EXPECT_EQ(*out[0], 1);
   EXPECT_EQ(*out[1], 2);
 }

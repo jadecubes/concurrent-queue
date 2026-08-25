@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
+#include <span>
 #include <thread>
 
 #include <benchmark/benchmark.h>
@@ -148,14 +149,14 @@ void BM_SpscBulkThroughput(benchmark::State& state) {
     for (auto _ : state) {
       std::size_t done = 0;
       while (done < kBulkBatch) {
-        done += queue.try_push_n(buf.data() + done, kBulkBatch - done);
+        done += queue.try_push_n(std::span{buf}.subspan(done));
       }
     }
   } else {
     for (auto _ : state) {
       std::size_t done = 0;
       while (done < kBulkBatch) {
-        done += queue.try_pop_n(buf.data() + done, kBulkBatch - done);
+        done += queue.try_pop_n(std::span{buf}.subspan(done));
       }
     }
   }

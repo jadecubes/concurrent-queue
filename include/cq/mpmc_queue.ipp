@@ -4,13 +4,10 @@
 #ifndef CQ_MPMC_QUEUE_IPP_
 #define CQ_MPMC_QUEUE_IPP_
 
-#include <algorithm>
 #include <atomic>
 #include <bit>
-#include <chrono>
 #include <cstddef>
 #include <stdexcept>
-#include <thread>
 #include <utility>
 
 namespace cq {
@@ -165,8 +162,9 @@ void MpmcQueue<T>::close() noexcept {
 
 template <typename T>
 std::size_t MpmcQueue<T>::slot_index(std::size_t ticket) const noexcept {
-  // The mask is set iff capacity is a power of two: one AND instead of a
-  // division on the hot path.
+  // One AND when the mask is nonzero (capacity a power of two; capacity 1
+  // computes 1 - 1 == 0 and falls through to the equally free % 1), a
+  // division otherwise.
   return mask_ != 0 ? (ticket & mask_) : (ticket % slots_.size());
 }
 

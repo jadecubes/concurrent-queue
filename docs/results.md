@@ -163,8 +163,9 @@ to catch the first free slot. The round trip is unchanged at 1.80G ops/s
 cross-session levels drift with machine load, ratios within a session are
 the signal).
 
-**SPSC bulk transfer.** `try_push_n`/`try_pop_n` move up to n items with one
-index publish per call — the batched-publish lever the v2.1 section named.
+**SPSC bulk transfer.** `try_push_n`/`try_pop_n` move up to a span's worth
+of items with one index publish per call — the batched-publish lever the
+v2.1 section named.
 At batches of 64 the pair moves **1.69G ± 0.09G ops/s**, 3.1× the single-op
 pair, while crossing cores.
 

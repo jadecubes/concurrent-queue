@@ -6,11 +6,10 @@
 
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <cstddef>
 #include <limits>
+#include <span>
 #include <stdexcept>
-#include <thread>
 #include <utility>
 
 namespace cq {
@@ -138,8 +137,8 @@ void SpscQueue<T>::dequeue(std::size_t head, T& out) {
 }
 
 template <typename T>
-std::size_t SpscQueue<T>::try_push_n(T* items, std::size_t n) {
-  if (n == 0 || closed_.load(std::memory_order_relaxed)) {
+std::size_t SpscQueue<T>::try_push_n(std::span<T> items) {
+  if (items.empty() || closed_.load(std::memory_order_relaxed)) {
     return 0;
   }
   auto tail = tail_.load(std::memory_order_relaxed);
@@ -150,7 +149,7 @@ std::size_t SpscQueue<T>::try_push_n(T* items, std::size_t n) {
   if (free_slots() == 0) {
     head_cache_ = head_.load(std::memory_order_acquire);
   }
-  const auto count = std::min(n, free_slots());
+  const auto count = std::min(items.size(), free_slots());
   for (std::size_t i = 0; i < count; ++i) {
     buffer_[tail] = std::move(items[i]);
     tail = next(tail);
@@ -162,8 +161,8 @@ std::size_t SpscQueue<T>::try_push_n(T* items, std::size_t n) {
 }
 
 template <typename T>
-std::size_t SpscQueue<T>::try_pop_n(T* out, std::size_t n) {
-  if (n == 0) {
+std::size_t SpscQueue<T>::try_pop_n(std::span<T> out) {
+  if (out.empty()) {
     return 0;
   }
   auto head = head_.load(std::memory_order_relaxed);
@@ -171,7 +170,7 @@ std::size_t SpscQueue<T>::try_pop_n(T* out, std::size_t n) {
   if (available() == 0) {
     tail_cache_ = tail_.load(std::memory_order_acquire);
   }
-  const auto count = std::min(n, available());
+  const auto count = std::min(out.size(), available());
   for (std::size_t i = 0; i < count; ++i) {
     out[i] = std::move(buffer_[head]);
     head = next(head);

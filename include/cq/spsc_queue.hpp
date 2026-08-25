@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <span>
 #include <vector>
 
 #include "cq/backoff.hpp"
@@ -76,19 +77,18 @@ class SpscQueue {
   /// @return false if the queue is empty.
   [[nodiscard]] bool try_pop(T& out);
 
-  /// Moves up to n items from items[0..n) into the ring with a single index
-  /// publish — the batched-publish optimization. Producer side.
-  /// @param items Source array; the first k elements are moved from.
-  /// @param n Maximum number of items to enqueue.
+  /// Moves up to items.size() items from the front of items into the ring
+  /// with a single index publish — the batched-publish optimization.
+  /// Producer side.
+  /// @param items Source span; the first k elements are moved from.
   /// @return k, the number enqueued (0 if the ring is full or closed).
-  [[nodiscard]] std::size_t try_push_n(T* items, std::size_t n);
+  [[nodiscard]] std::size_t try_push_n(std::span<T> items);
 
-  /// Moves up to n items into out[0..n) with a single index publish.
-  /// Consumer side.
-  /// @param[out] out Destination array; the first k elements are written.
-  /// @param n Maximum number of items to dequeue.
+  /// Moves up to out.size() items into the front of out with a single index
+  /// publish. Consumer side.
+  /// @param[out] out Destination span; the first k elements are written.
   /// @return k, the number dequeued (0 if the ring is empty).
-  [[nodiscard]] std::size_t try_pop_n(T* out, std::size_t n);
+  [[nodiscard]] std::size_t try_pop_n(std::span<T> out);
 
   /// Closes the queue: push() and try_push() refuse new values, pop() drains
   /// what remains and then returns false. Idempotent; callable from any
