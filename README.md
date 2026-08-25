@@ -31,8 +31,9 @@ void producer(Task t) {
 }
 ```
 
-Two things there are already right, and are the two people most often get
-wrong: `t.run()` runs after the lock is released, and so does `notify_one()`.
+Two things there are already right — and they are the two people most often
+get wrong: `t.run()` runs after the lock is released, and so does
+`notify_one()`.
 
 Four things are missing, and they are what this repository is:
 
@@ -85,7 +86,40 @@ side, which is what turns every index update into a plain store instead of an
 atomic read-modify-write. `MpmcQueue` keeps the thread count and pays a CAS
 per operation — the one trade that did not pay off.
 
-Both diagrams, and why the CAS costs what it does: [docs/design.md](docs/design.md).
+## How they work
+
+All three enforce one invariant — the one the opening snippet enforces with
+its lock:
+
+> **The producer's write of an item must happen-before the consumer's read of it.**
+
+Without it the consumer is not reading stale data — it is a data race, and
+the compiler and CPU may hand it half an object. C++ has one tool for this:
+a *release* publishes every write sequenced before it, and an *acquire* that
+observes the release sees them all.
+
+That gives one chain, and each queue is a different way of filling it in:
+
+```
+            item write         ──sb──▶ [release]                   ──sw──▶ [acquire]            ──sb──▶ item read
+MutexQueue  q.push(t)          m.unlock()                          m.lock()                     q.front()
+SpscQueue   buffer_[tail] = t  tail_.store(release)                tail_.load(acquire)          buffer_[head]
+MpmcQueue   slot.value = t     slot.sequence.store(2t+1, release)  slot.sequence.load(acquire)  slot.value
+            └────────────────────────────────────────── happens-before ─────────────────────────────────────────┘
+```
+
+(`sb` = sequenced-before, within one thread; `sw` = synchronizes-with, across
+threads.) Read down a column and the three are the same protocol. Read along
+a row and the difference is what plays `unlock` / `lock` — and who keeps the
+item write ahead of the release: the mutex does that for everything in the
+critical section, while the two rings depend on the line order in `enqueue`
+/ `try_enqueue`.
+
+Why the edge moves: one thread writing `tail_` is what makes a plain store
+sound, and with several producers *claiming* a slot and *filling* it become
+separate moments — a shared index can only signal the claim, so the edge has
+to live on the slot. The full derivation, against the shipped code:
+[docs/design.md](docs/design.md).
 
 ## Usage
 
@@ -137,9 +171,6 @@ Two rules are doing the real work there, and both are easy to get wrong:
 - **The queue must outlive the threads.** Declaring it before them is enough —
   destruction runs in reverse, so the `jthread`s join first. Destroying a
   queue while a thread sits in `push`/`pop` is undefined behavior.
-
-Every operation is `[[nodiscard]]`, because ignoring whether a push succeeded
-is almost always a bug.
 
 `SpscQueue` and `MpmcQueue` are drop-in for the above except `try_push_for` /
 `try_pop_for`, which only `MutexQueue` has. Use `try_push` / `try_pop` when
