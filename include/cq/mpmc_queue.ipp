@@ -5,15 +5,16 @@
 #define CQ_MPMC_QUEUE_IPP_
 
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <stdexcept>
-#include <thread>
 #include <utility>
 
 namespace cq {
 
 template <typename T>
-MpmcQueue<T>::MpmcQueue(std::size_t capacity) : slots_(make_slots(capacity)) {
+MpmcQueue<T>::MpmcQueue(std::size_t capacity)
+    : slots_(make_slots(capacity)), mask_(std::has_single_bit(capacity) ? capacity - 1 : 0) {
   for (std::size_t i = 0; i < slots_.size(); ++i) {
     // Lap zero: every slot starts free for the producer holding ticket i.
     // Relaxed is enough — no other thread can touch the queue yet.
@@ -67,7 +68,8 @@ std::vector<typename MpmcQueue<T>::Slot> MpmcQueue<T>::make_slots(std::size_t ca
 template <typename T>
 bool MpmcQueue<T>::push(T value) {
   // The closed check comes first so a close is honored even when the ring
-  // has room.
+  // has room. Yield briefly, then sleep with backoff instead of burning CPU.
+  Backoff backoff;
   while (true) {
     if (closed_.load(std::memory_order_relaxed)) {
       return false;
@@ -75,7 +77,7 @@ bool MpmcQueue<T>::push(T value) {
     if (try_enqueue(value)) {
       return true;
     }
-    std::this_thread::yield();
+    backoff.wait();
   }
 }
 
@@ -89,6 +91,7 @@ bool MpmcQueue<T>::try_push(T value) {
 
 template <typename T>
 bool MpmcQueue<T>::pop(T& out) {
+  Backoff backoff;
   while (true) {
     if (try_dequeue(out)) {
       return true;
@@ -99,7 +102,7 @@ bool MpmcQueue<T>::pop(T& out) {
     if (closed_.load(std::memory_order_acquire)) {
       return try_dequeue(out);
     }
-    std::this_thread::yield();
+    backoff.wait();
   }
 }
 
@@ -112,7 +115,7 @@ template <typename T>
 bool MpmcQueue<T>::try_enqueue(T& value) {
   auto ticket = enqueue_pos_.load(std::memory_order_relaxed);
   while (true) {
-    auto& slot = slots_[ticket % slots_.size()];
+    auto& slot = slots_[slot_index(ticket)];
     const auto seq = slot.sequence.load(std::memory_order_acquire);
     const auto dif = static_cast<std::ptrdiff_t>(seq - (2 * ticket));
     if (dif == 0) {  // Slot is free for this ticket — race to claim it
@@ -134,7 +137,7 @@ template <typename T>
 bool MpmcQueue<T>::try_dequeue(T& out) {
   auto ticket = dequeue_pos_.load(std::memory_order_relaxed);
   while (true) {
-    auto& slot = slots_[ticket % slots_.size()];
+    auto& slot = slots_[slot_index(ticket)];
     const auto seq = slot.sequence.load(std::memory_order_acquire);
     const auto dif = static_cast<std::ptrdiff_t>(seq - ((2 * ticket) + 1));
     if (dif == 0) {  // Slot holds data for this ticket — race to claim it
@@ -155,6 +158,14 @@ bool MpmcQueue<T>::try_dequeue(T& out) {
 template <typename T>
 void MpmcQueue<T>::close() noexcept {
   closed_.store(true, std::memory_order_release);
+}
+
+template <typename T>
+std::size_t MpmcQueue<T>::slot_index(std::size_t ticket) const noexcept {
+  // One AND when the mask is nonzero (capacity a power of two; capacity 1
+  // computes 1 - 1 == 0 and falls through to the equally free % 1), a
+  // division otherwise.
+  return mask_ != 0 ? (ticket & mask_) : (ticket % slots_.size());
 }
 
 template <typename T>

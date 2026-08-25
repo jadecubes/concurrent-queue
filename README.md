@@ -76,7 +76,8 @@ as a sequence of trades.
 | Consumer threads | any number | **exactly one** | any number |
 | Exceeding that | — | **undefined behaviour, no diagnostic** | — |
 | Bounded wait (`try_push_for`) | yes | no | no |
-| A waiting thread | sleeps | spins | spins |
+| Bulk ops (`try_push_n` / `try_pop_n`) | no | yes | no |
+| A blocked thread | sleeps | spins briefly, then sleeps | spins briefly, then sleeps |
 | Built from | mutex + condition variables | atomics only | atomics only |
 
 `MutexQueue` gives up nothing. `SpscQueue` gives up all but one thread per
@@ -159,6 +160,11 @@ so moving an item costs two. Higher is better.
 - **`MpmcQueue` loses to the mutex at 4+4** — 13.3M against 21.6M. Lock-free
   buys progress guarantees, not throughput: under contention its threads retry
   while the mutex's threads sleep.
+- **Sleeping when blocked costs the SPSC pair ~9%** (602M → 547M in the same
+  session); in exchange a blocked thread burns ~0.5% of a core instead of all
+  of it. Bulk transfer buys the loss back sevenfold: `try_push_n` /
+  `try_pop_n` publish the index once per batch and move **1.69G ops/s** at
+  batches of 64.
 
 Error bars, conditions, the comparison against moodycamel and TBB, and the
 reasoning: [docs/results.md](docs/results.md).

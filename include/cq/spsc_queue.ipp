@@ -4,11 +4,12 @@
 #ifndef CQ_SPSC_QUEUE_IPP_
 #define CQ_SPSC_QUEUE_IPP_
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <limits>
+#include <span>
 #include <stdexcept>
-#include <thread>
 #include <utility>
 
 namespace cq {
@@ -35,6 +36,10 @@ std::size_t SpscQueue<T>::ring_slots(std::size_t capacity) {
 // consumer; the mirror-image pair on head_ makes the consumer's move-out
 // visible to the producer before it overwrites the slot. Each side loads its
 // *own* index relaxed — it is the only writer of that index.
+//
+// A blocked side needs no wakeup from the publisher: it sleeps with timed
+// backoff and re-polls (see cq/backoff.hpp), so the publish path carries no
+// waiter bookkeeping at all.
 //
 // close() is a release store; the consumer's acquire load of closed_ in pop()
 // therefore also makes every push that preceded the close visible, which is
@@ -64,8 +69,9 @@ template <typename T>
 bool SpscQueue<T>::push(T value) {
   const auto tail = tail_.load(std::memory_order_relaxed);
   const auto slot_after = next(tail);
-  // Wait for a free slot, bailing out if the queue closes first. The closed
-  // check stays first so a close is honored even when the ring has room.
+  // The closed check stays first so a close is honored even when there is
+  // room.
+  Backoff backoff;
   while (true) {
     if (closed_.load(std::memory_order_relaxed)) {
       return false;
@@ -73,7 +79,7 @@ bool SpscQueue<T>::push(T value) {
     if (has_room(slot_after)) {
       break;
     }
-    std::this_thread::yield();
+    backoff.wait();
   }
   enqueue(tail, std::move(value));
   return true;
@@ -94,6 +100,7 @@ bool SpscQueue<T>::try_push(T value) {
 
 template <typename T>
 bool SpscQueue<T>::pop(T& out) {
+  Backoff backoff;
   while (true) {
     if (try_pop(out)) {
       return true;
@@ -103,7 +110,7 @@ bool SpscQueue<T>::pop(T& out) {
     if (closed_.load(std::memory_order_acquire)) {
       return try_pop(out);
     }
-    std::this_thread::yield();
+    backoff.wait();
   }
 }
 
@@ -127,6 +134,51 @@ template <typename T>
 void SpscQueue<T>::dequeue(std::size_t head, T& out) {
   out = std::move(buffer_[head]);
   head_.store(next(head), std::memory_order_release);
+}
+
+template <typename T>
+std::size_t SpscQueue<T>::try_push_n(std::span<T> items) {
+  if (items.empty() || closed_.load(std::memory_order_relaxed)) {
+    return 0;
+  }
+  auto tail = tail_.load(std::memory_order_relaxed);
+  // Free slots as seen through the cache; refresh once if it says none.
+  const auto free_slots = [&] {
+    return (head_cache_ + buffer_.size() - 1 - tail) % buffer_.size();
+  };
+  if (free_slots() == 0) {
+    head_cache_ = head_.load(std::memory_order_acquire);
+  }
+  const auto count = std::min(items.size(), free_slots());
+  for (std::size_t i = 0; i < count; ++i) {
+    buffer_[tail] = std::move(items[i]);
+    tail = next(tail);
+  }
+  if (count != 0) {
+    tail_.store(tail, std::memory_order_release);  // one publish for the batch
+  }
+  return count;
+}
+
+template <typename T>
+std::size_t SpscQueue<T>::try_pop_n(std::span<T> out) {
+  if (out.empty()) {
+    return 0;
+  }
+  auto head = head_.load(std::memory_order_relaxed);
+  const auto available = [&] { return (tail_cache_ + buffer_.size() - head) % buffer_.size(); };
+  if (available() == 0) {
+    tail_cache_ = tail_.load(std::memory_order_acquire);
+  }
+  const auto count = std::min(out.size(), available());
+  for (std::size_t i = 0; i < count; ++i) {
+    out[i] = std::move(buffer_[head]);
+    head = next(head);
+  }
+  if (count != 0) {
+    head_.store(head, std::memory_order_release);  // one publish for the batch
+  }
+  return count;
 }
 
 template <typename T>

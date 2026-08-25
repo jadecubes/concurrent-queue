@@ -11,6 +11,7 @@ class at different points in time:
 | v2.1 | `SpscQueue` | Cached peer indices — same class, optimised |
 | v2.5 | `MpmcQueue` | Vyukov-style bounded MPMC |
 | v3 | — | The three against moodycamel and TBB |
+| v3.1 | `SpscQueue`, `MpmcQueue` | Sleep when blocked; SPSC bulk ops; MPMC pow2 indexing |
 
 ## How these were measured
 
@@ -140,5 +141,37 @@ Specialising to the actual concurrency shape beats generic cleverness.
 shared ring. The queue that beat it gave both of those up. Lock-free bought
 progress guarantees and large wins where contention is structurally limited —
 not throughput under real MPMC contention.
+
+## v3.1 — sleep when blocked, bulk transfer, pow2 indexing
+
+Three features closing the gap to the industrial queues, measured in one
+session (mutex control reproduced within noise; load ~5).
+
+**Blocked ops now sleep instead of spinning.** Blocking `push`/`pop` yield
+briefly, then sleep with doubling backoff (`cq/backoff.hpp`): a consumer
+blocked for 2 s used to burn **1975 ms** of CPU, now **10 ms** (~0.5% of a
+core), with wakeup latency bounded at 1 ms. Two rejected designs earned their
+place in this writeup: a futex gate the publisher must check cost **70%** of
+the SPSC pair throughput (the check after a release store forces the store
+buffer to drain), and merely inlining the sleep machinery into `push`/`pop`
+cost **4×** on the uncontended round trip by pushing the functions past the
+inliner's budget — hence the `noinline` cold `Backoff::wait()`. What remains:
+the pair throughput runs ~9% below pure spinning (547M vs 602M ops/s),
+because a stalled side now sleeps through the stall instead of burning a core
+to catch the first free slot. The round trip is unchanged at 1.80G ops/s
+(this session's control level; the v2.1 session above recorded 1.56G —
+cross-session levels drift with machine load, ratios within a session are
+the signal).
+
+**SPSC bulk transfer.** `try_push_n`/`try_pop_n` move up to a span's worth
+of items with one index publish per call — the batched-publish lever the
+v2.1 section named.
+At batches of 64 the pair moves **1.69G ± 0.09G ops/s**, 3.1× the single-op
+pair, while crossing cores.
+
+**Power-of-two indexing for MpmcQueue.** When capacity is a power of two the
+ticket→slot map is one AND instead of a division. On the M2 the difference is
+within noise (the divider is not this queue's bottleneck); kept because it is
+strictly cheaper and capacity stays arbitrary.
 
 _Roadmap complete through v3. Stretch (a thread pool) remains._
