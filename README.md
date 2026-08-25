@@ -84,7 +84,42 @@ side, which is what turns every index update into a plain store instead of an
 atomic read-modify-write. `MpmcQueue` keeps the thread count and pays a CAS
 per operation — the one trade that did not pay off.
 
-Both diagrams, and why the CAS costs what it does: [docs/design.md](docs/design.md).
+## How they work
+
+All three enforce one invariant — the one the opening snippet enforces with
+its lock:
+
+> **The producer's write of an item must happen-before the consumer's read of it.**
+
+Without it the consumer is not reading stale data — it is a data race, and
+the compiler and CPU may hand it half an object. C++ has one tool for this:
+a *release* publishes every write sequenced before it, and an *acquire* that
+observes the release sees them all.
+
+That gives one chain, and each queue is a different way of filling it in:
+
+```
+            item write         ──sb──▶ [release]                   ──sw──▶ [acquire]            ──sb──▶ item read
+MutexQueue  q.push(t)          m.unlock()                          m.lock()                     q.front()
+SpscQueue   buffer_[tail] = t  tail_.store(release)                tail_.load(acquire)          buffer_[head]
+MpmcQueue   slot.value = t     slot.sequence.store(2t+1, release)  slot.sequence.load(acquire)  slot.value
+            └────────────────────────────────────────── happens-before ─────────────────────────────────────────┘
+```
+
+(`sb` = sequenced-before, within one thread; `sw` = synchronizes-with, across
+threads.) Read down a column and the three are the same protocol. Read along
+a row and the difference is what plays `unlock` / `lock` — and who keeps the
+item write ahead of the release: the mutex does that for everything in the
+critical section, while the two rings depend on the line order in `enqueue`
+/ `try_enqueue`.
+
+The lock publishes a whole critical section at once: easiest to get right,
+slowest. `SpscQueue` narrows the edge to one atomic index, which is sound only
+because one thread writes it. `MpmcQueue` moves the edge onto each slot,
+because with several producers *claiming* a slot and *filling* it are
+separate moments, and a shared index can only signal the claim — that is the
+CAS, and its cost. The full derivation, against the shipped code:
+[docs/design.md](docs/design.md).
 
 ## Usage
 
