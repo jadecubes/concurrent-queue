@@ -94,32 +94,26 @@ its lock:
 > **The producer's write of an item must happen-before the consumer's read of it.**
 
 Without it the consumer is not reading stale data — it is a data race, and
-the compiler and CPU may hand it half an object. C++ has one tool for this:
-a *release* publishes every write sequenced before it, and an *acquire* that
-observes the release sees them all.
+the compiler and CPU may hand it half an object. Four events form the hand-off:
 
-That gives one chain, and each queue is a different way of filling it in:
-
-```
-            item write         ──sb──▶ [release]                   ──sw──▶ [acquire]            ──sb──▶ item read
-MutexQueue  q.push(t)          m.unlock()                          m.lock()                     q.front()
-SpscQueue   buffer_[tail] = t  tail_.store(release)                tail_.load(acquire)          buffer_[head]
-MpmcQueue   slot.value = t     slot.sequence.store(2t+1, release)  slot.sequence.load(acquire)  slot.value
-            └────────────────────────────────────────── happens-before ─────────────────────────────────────────┘
+```text
+Producer thread                    Consumer thread
+item write ──sb──▶ release ──sw──▶ acquire ──sb──▶ item read
 ```
 
-(`sb` = sequenced-before, within one thread; `sw` = synchronizes-with, across
-threads.) Read down a column and the three are the same protocol. Read along
-a row and the difference is what plays `unlock` / `lock` — and who keeps the
-item write ahead of the release: the mutex does that for everything in the
-critical section, while the two rings depend on the line order in `enqueue`
-/ `try_enqueue`.
+`sb` is same-thread program order; `sw` is the cross-thread synchronization
+edge. Together, they make the item write happen-before the item read.
 
-Why the edge moves: one thread writing `tail_` is what makes a plain store
-sound, and with several producers *claiming* a slot and *filling* it become
-separate moments — a shared index can only signal the claim, so the edge has
-to live on the slot. The full derivation, against the shipped code:
-[docs/design.md](docs/design.md).
+For `SpscQueue`, the producer writes the payload before publishing `tail_`.
+The consumer reads the payload only after its acquire load observes that
+publication. If the load sees the old tail, synchronization has not occurred —
+but the queue also appears empty, so the consumer does not touch the slot. The
+availability check and synchronization are the same load.
+
+`MutexQueue` gets the same ordering structurally from unlock/lock. The lock-free
+queues encode it explicitly: SPSC publishes through `tail_`, while MPMC
+publishes through each slot's sequence counter. The full derivation, against
+the shipped code: [docs/design.md](docs/design.md).
 
 ## Usage
 
