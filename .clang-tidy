@@ -14,7 +14,9 @@ Checks: >
   -modernize-use-trailing-return-type,
   -misc-include-cleaner
 WarningsAsErrors: '*'
-HeaderFilterRegex: 'include/cq/.*'
+# bench/ is included because this is where the first header outside include/cq
+# landed; without it that header receives no diagnostics at all.
+HeaderFilterRegex: '(include/cq|bench)/.*'
 CheckOptions:
   # Complexity contributed by macro expansion (GTest asserts, etc.) is not
   # the author's complexity.
