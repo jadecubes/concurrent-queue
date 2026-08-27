@@ -66,11 +66,18 @@ if(CQ_BUILD_TESTS)
 endif()
 
 if(CQ_BUILD_BENCHMARKS)
+  # SYSTEM, like the two below: benchmark is the only dependency here that
+  # arrives as a plain -I (googletest self-marks its interface SYSTEM), so it is
+  # the only one clang-tidy's header filter can reach. That matters because the
+  # filter matches a path segment anywhere above the repo, so a checkout under
+  # e.g. /home/runner/work/bench/bench/ would otherwise lint benchmark.h under
+  # WarningsAsErrors.
   FetchContent_Declare(
     benchmark
     URL https://github.com/google/benchmark/archive/refs/tags/v1.9.1.tar.gz
     URL_HASH SHA256=32131c08ee31eeff2c8968d7e874f3cb648034377dfc32a4c377fa8796d84981
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SYSTEM)
   set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
   set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
 

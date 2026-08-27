@@ -169,11 +169,13 @@ void BM_QueueTryThroughput(benchmark::State& state) {
   // retries per its own op — for any even producer/consumer split, verified
   // bit-exact at 2 and at 8 threads. An odd split would misreport: the scale
   // would have to be threads/producers on the push side and threads/consumers
-  // on the pop side, not a constant 2. It also livelocks under the registered
-  // MinTime, at every capacity, because iterations-per-thread grows far past
-  // the prefill that would otherwise absorb the imbalance; only an
-  // iteration-capped smoke run completes, and there the numbers would be
-  // silently wrong. Only even splits are registered.
+  // on the pop side, not a constant 2. Whether it misreports or simply hangs
+  // is one condition: an odd split completes only while
+  // (consumers - producers) * iterations-per-thread <= capacity / 2, the
+  // prefill being the only slack. Under the registered MinTime that product
+  // reaches millions, so every sweep point livelocks; an iteration-capped run
+  // completes only at the capacities whose prefill covers it, and there the
+  // counters would be silently wrong. Only even splits are registered.
   using benchmark::Counter;
   const auto side_retries = 2.0 * static_cast<double>(retries);
   state.counters["push_retries/push"] =
