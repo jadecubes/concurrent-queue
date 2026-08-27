@@ -39,10 +39,10 @@ jobs:
       - uses: actions/checkout@v4
       # Tests stay ON here deliberately. Without this job they only ever run
       # Debug+TSan, which compiles no NDEBUG path, applies no optimiser, and
-      # explores a much narrower interleaving space (the checksum stress test
-      # is ~16x less contended under TSan's slowdown). None of that hides a
-      # defect in v1, but the roadmap's lock-free v2 is precisely the code
-      # where -O0 and -O3 diverge.
+      # runs the checksum stress test ~12x slower — so it explores a very
+      # different, and much narrower, slice of the interleaving space. None of
+      # that hides a defect in v1, but the roadmap's lock-free v2 is precisely
+      # the code where -O0 and -O3 diverge.
       - name: Configure
         run: cmake -B build-rel -DCMAKE_BUILD_TYPE=Release
       - name: Build

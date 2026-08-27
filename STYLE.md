@@ -13,8 +13,8 @@ checked in CI).
 - **Internal code** (tests, benchmarks, private members, function bodies):
   plain `//` prose. Explain *why*, not *what*.
 - Tag hygiene is compiler-enforced: clang builds compile with
-  `-Wdocumentation`, which rejects `@param` names that do not match the
-  signature. Keep comments in sync with code or the build fails.
+  `-Wdocumentation -Werror=documentation`, which rejects `@param` names that
+  do not match the signature. Keep comments in sync with code or the build fails.
 - `TODO(username): description` for known follow-ups.
 
 ## Layout

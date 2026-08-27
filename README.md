@@ -68,10 +68,12 @@ this is the unit Google Benchmark prints as `items_per_second`.
 Per-op figures below are `1 / throughput` — the aggregate cost of one op across
 the whole queue, not per-thread latency. CV is the coefficient of variation of
 the **throughput** column, matching the `±` beside it. Every registration now
-sets `UseRealTime()`, which makes that the same quantity as the CV Google
-Benchmark prints for its Time column; a rate counter is divided by whichever
-clock the benchmark selected, so mixing the two columns in one row is what made
-an earlier version of this table read as self-contradictory.
+sets `UseRealTime()`, so throughput and the Time column are reciprocals over
+the same clock; their CVs track each other closely but are not equal, since
+CV(1/X) only approximates CV(X) and the gap widens with the spread. A rate
+counter is divided by whichever clock the benchmark selected, so a row that
+took its `±` from one column and its CV from the other read as
+self-contradictory — which is what an earlier version of this table did.
 
 | Benchmark (v1 MutexQueue) | Throughput | Per op | CV |
 |---|---|---|---|

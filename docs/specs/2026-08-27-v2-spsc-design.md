@@ -176,12 +176,14 @@ Stress (1 producer + 1 consumer, under TSan):
    duplicated; SPSC additionally guarantees strict ordering, so assert
    `value == last + 1`. Free, and strictly stronger than v1's assertion.
 2. **Payload visibility.** Push `std::unique_ptr<std::array<int, N>>`, filled
-   by the producer, every element verified by the consumer. This is the gap
-   found in v1's suite on 2026-08-26: `SupportsMoveOnlyTypes` is
-   single-threaded and the checksum test is scalar-only, so nothing currently
-   exercises transitive pointee visibility. A prototype run confirmed a
-   relaxed-store version of this test is caught by TSan while a scalar
-   checksum passes straight through the same race.
+   by the producer, every element verified by the consumer. v1 gained exactly
+   this test in `4499592` (`PayloadWrittenBeforePushIsVisibleAfterPop`), so
+   v2's job is to port the harness, not to invent it. Note that under a single
+   mutex the test cannot fail alone for the property it names — the same lock
+   carries queue state and the transitive edge — so its value is entirely
+   forward-looking: a relaxed-index ring reconciles its checksum perfectly
+   while TSan flags the payload race, which is the regression v2 can actually
+   have.
 3. **Small ring, high volume** (capacity 1 and 2, millions of items) so the
    slot-reuse edge is exercised constantly.
 
@@ -230,6 +232,14 @@ pool would actually use.
 The fairness half of this is already done: PR #14 added a `MutexQueue/try_`
 throughput registration over a capacity sweep, so v1 and v2 are compared on
 the same API without adding blocking to v2.
+
+One consequence to document on `SpscQueue::try_push`, since there is no
+blocking `push()` to fall back on: a retry loop must re-materialise its
+argument every pass (`while (!q.try_push(make_value()))`), because the
+by-value sink has already consumed an rvalue on the failed attempt. That
+covers `std::unique_ptr<Payload>` — which the test plan below pushes — as
+long as the payload can be re-created. A move-only value that cannot be is
+unsupported by this API, and the header must say so.
 
 **Decision 2 — power-of-two capacity.** Tighter than v1's contract. Accepted
 for the mask, and because v2.5 needs it too.

@@ -18,21 +18,7 @@ namespace cq {
 /// again" alike, so a non-blocking retry loop needs closed() to terminate;
 /// without that test it spins forever after close(). Blocking push()/pop()
 /// need no such check — they return false only when retrying is futile.
-///
-/// A try_push() retry loop must re-materialise its argument every pass.
-/// try_push takes T by value, so a failed attempt has already consumed an
-/// rvalue argument; retrying with the same object pushes a moved-from
-/// husk, silently, with no diagnostic:
-///
-///     while (!q.try_push(make_value())) {  // NOT try_push(std::move(v))
-///       if (q.closed()) break;
-///     }
-///
-/// For move-only T there is no correct try_push() retry loop at all — the
-/// value cannot be recovered from a failed attempt, and the API returns
-/// only bool. Use blocking push(), which needs no closed() test. For
-/// copyable T the loop above is correct but copy-constructs the argument on
-/// every spin.
+/// See try_push() for how such a loop must handle its argument.
 ///
 /// Lifetime: the queue must outlive every thread using it — call close()
 /// and join all producers/consumers before destruction. Destroying the
@@ -78,10 +64,25 @@ class MutexQueue {
   [[nodiscard]] bool push(T value);
 
   /// Enqueues a value without blocking.
-  /// @param value Element to enqueue, taken by value; see push() above, and
-  ///   the retry-loop caveat under Thread-safety.
-  /// @return false if the queue is full or closed; closed() tells them apart
-  ///   (see Thread-safety above).
+  ///
+  /// A retry loop must re-materialise its argument every pass. This is a
+  /// by-value sink, so a failed attempt has already consumed an rvalue
+  /// argument, and retrying with the same object pushes a moved-from husk,
+  /// silently and with no diagnostic:
+  ///
+  ///     while (!q.try_push(make_value())) {  // NOT try_push(std::move(v))
+  ///       if (q.closed()) break;
+  ///     }
+  ///
+  /// That form costs nothing: the prvalue initialises the parameter
+  /// directly, so a failed spin constructs one T and copies none.
+  /// try_push(v) on an lvalue is also correct and leaves v intact, but
+  /// copy-constructs on every spin. What has no correct retry loop is a
+  /// move-only value that cannot be re-created — it is unrecoverable after
+  /// a failed pass and the API returns only bool. Use blocking push().
+  ///
+  /// @param value Element to enqueue, taken by value; see push() above.
+  /// @return false if the queue is full or closed; closed() tells them apart.
   [[nodiscard]] bool try_push(T value);
 
   /// Dequeues into out, blocking while the queue is empty and open.
@@ -94,7 +95,7 @@ class MutexQueue {
   /// @param[out] out Receives the dequeued element on success; untouched on
   ///   failure, unless T's move assignment throws (see Exceptions above).
   /// @return false if the queue is empty, including once it is closed and
-  ///   drained; closed() tells them apart (see Thread-safety above).
+  ///   drained; closed() tells them apart.
   [[nodiscard]] bool try_pop(T& out);
 
   /// Closes the queue and wakes all blocked producers and consumers.
