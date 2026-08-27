@@ -97,6 +97,12 @@ void BM_MutexQueuePushPopSingleThread(benchmark::State& state) {
   state.SetItemsProcessed(state.iterations() * 2);
 }
 BENCHMARK(BM_MutexQueuePushPopSingleThread)
+    // UseRealTime for the same reason the threaded registrations set it, and
+    // it is load-bearing here even at one thread: Google Benchmark divides a
+    // rate counter by whichever clock the benchmark selected, so without this
+    // the reported items/s would be per CPU-second while every other row is
+    // per wall-second — and the two are not the same number.
+    ->UseRealTime()
     ->MinTime(kMinTimeSeconds)
     ->Name("MutexQueue/single_thread_roundtrip");
 
