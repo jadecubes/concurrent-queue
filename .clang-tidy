@@ -14,7 +14,13 @@ Checks: >
   -modernize-use-trailing-return-type,
   -misc-include-cleaner
 WarningsAsErrors: '*'
-HeaderFilterRegex: 'include/cq/.*'
+# Cover every first-party directory that holds headers, not just include/cq:
+# tests/queue_test_util.hpp and bench/try_operation.hpp both sit outside it and
+# would otherwise receive no diagnostics at all. Dependency headers stay out
+# because every dependency is SYSTEM, not because of the anchor — the anchor
+# only excludes segment-substring matches like microbench/, and still matches a
+# bench/ segment above the repo root.
+HeaderFilterRegex: '(^|/)(include/cq|bench|tests)/'
 CheckOptions:
   # Complexity contributed by macro expansion (GTest asserts, etc.) is not
   # the author's complexity.
