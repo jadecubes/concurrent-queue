@@ -33,6 +33,7 @@
 #include <memory>
 #include <span>
 #include <thread>
+#include <vector>
 
 #include <benchmark/benchmark.h>
 #include <concurrentqueue.h>
@@ -88,39 +89,35 @@ class MoodycamelQueue {
 template <typename Queue>
 std::unique_ptr<Queue> shared_queue;
 
+// Half-full start: neither side begins blocked or spinning on the other, so
+// the measurement starts in steady state. At capacity 1 the half is 0, so that
+// sweep point deliberately starts empty — which is the retry pressure it is
+// there to measure.
 template <typename Queue>
-void setup_queue(const benchmark::State& /*state*/) {
-  shared_queue<Queue> = std::make_unique<Queue>(kCapacity);
-  // Half-full start: neither side begins blocked or spinning on the other, so
-  // the measurement starts in steady state.
-  bool prefilled = true;
-  for (std::uint64_t i = 0; i < kCapacity / 2; ++i) {
-    prefilled = prefilled && shared_queue<Queue>->try_push(i);
-  }
-  if (!prefilled) {
-    std::abort();  // unreachable: fresh queue, stays below capacity
-  }
-}
-
-template <typename Queue>
-void teardown_queue(const benchmark::State& /*state*/) {
-  shared_queue<Queue>.reset();
-}
-
-// Same as setup_queue, but takes the capacity from the registered Arg so one
-// benchmark can sweep it.
-template <typename Queue>
-void setup_queue_at_capacity(const benchmark::State& state) {
-  const auto capacity = static_cast<std::size_t>(state.range(0));
+void install_half_full_queue(std::size_t capacity) {
   shared_queue<Queue> = std::make_unique<Queue>(capacity);
-  // Half-full where the half exists: at capacity 1 it is 0, so that sweep
-  // point deliberately starts empty -- which is the retry pressure it is
-  // there to measure.
   for (std::uint64_t i = 0; i < capacity / 2; ++i) {
     if (!shared_queue<Queue>->try_push(i)) {
       std::abort();  // unreachable: fresh queue, stays below capacity
     }
   }
+}
+
+template <typename Queue>
+void setup_queue(const benchmark::State& /*state*/) {
+  install_half_full_queue<Queue>(kCapacity);
+}
+
+// Same, but takes the capacity from the registered Arg so one benchmark can
+// sweep it.
+template <typename Queue>
+void setup_queue_at_capacity(const benchmark::State& state) {
+  install_half_full_queue<Queue>(static_cast<std::size_t>(state.range(0)));
+}
+
+template <typename Queue>
+void teardown_queue(const benchmark::State& /*state*/) {
+  shared_queue<Queue>.reset();
 }
 
 template <typename Queue>
@@ -169,16 +166,16 @@ void BM_QueueTryThroughput(benchmark::State& state) {
   // Counters sum across threads, and kAvgIterations divides by the iteration
   // total over *all* threads. Producers and consumers each own half of that
   // total, so doubling one side's retries before the divide yields that side's
-  // retries per its own op -- for any even producer/consumer split, not just
-  // the 1+1 these sweeps register.
+  // retries per its own op — for any even producer/consumer split, verified
+  // bit-exact at 2 and at 8 threads. An odd split would misreport, but it
+  // deadlocks this harness first: pushes and pops would no longer balance.
+  using benchmark::Counter;
   const auto side_retries = 2.0 * static_cast<double>(retries);
-  state.counters.emplace(
-      "push_retries/push",
-      benchmark::Counter(is_producer ? side_retries : 0.0, benchmark::Counter::kAvgIterations));
-  state.counters.emplace("pop_retries/pop", benchmark::Counter(is_producer ? 0.0 : side_retries,
-                                                               benchmark::Counter::kAvgIterations));
-  state.counters.emplace("retries/op", benchmark::Counter(static_cast<double>(retries),
-                                                          benchmark::Counter::kAvgIterations));
+  state.counters["push_retries/push"] =
+      Counter(is_producer ? side_retries : 0.0, Counter::kAvgIterations);
+  state.counters["pop_retries/pop"] =
+      Counter(is_producer ? 0.0 : side_retries, Counter::kAvgIterations);
+  state.counters["retries/op"] = Counter(static_cast<double>(retries), Counter::kAvgIterations);
 }
 
 // Uncontended single-thread round trip: the queue's raw per-op cost with no
@@ -239,6 +236,14 @@ static_assert(kSpscThreads % 2 == 0 && kMpmcThreads % 2 == 0,
 // iteration form overrides, which is what the ctest smoke run uses (1x).
 constexpr double kMinTimeSeconds = 1.0;
 
+// Capacity sweep points for the non-blocking runs: 1 and 2 force every op to
+// wait on its counterpart, 8 sits at the knee, and 64 / 1024 are deep enough
+// for the two sides to decouple — 1024 being the capacity the blocking rows
+// use, so those rows stay comparable. Powers of two keep MpmcQueue on its mask
+// fast path; it supports other capacities via % and is tested at 3.
+// Not constexpr: ArgsProduct takes vector<vector<int64_t>>.
+const std::vector<std::int64_t> capacity_sweep{1, 2, 8, 64, 1024};
+
 BENCHMARK(BM_QueueThroughput<MutexQueue>)
     ->Setup(setup_queue<MutexQueue>)
     ->Teardown(teardown_queue<MutexQueue>)
@@ -291,16 +296,20 @@ BENCHMARK(BM_QueueThroughput<MoodycamelQueue>)
     ->MinTime(kMinTimeSeconds)
     ->Name("MoodycamelQueue/throughput");
 
-// Non-blocking sweeps. Capacity is the independent variable here, not a
-// tuning constant, and every value is a power of two because MpmcQueue masks
-// its indices. Only the cq queues are swept: moodycamel is unbounded, so it
-// has no capacity to vary, and tbb's adapter has no try_pop yet.
-// NOLINTBEGIN(readability-magic-numbers)
+// Non-blocking sweeps. Only the cq queues are swept: neither external adapter
+// has a try_pop, and moodycamel is unbounded besides, so it has no capacity to
+// vary.
+//
+// Any ratio read across these rows is a statement about the retry policy as
+// much as about the queues. With the yield, Spsc/Mutex at capacity 1 is ~1.5x;
+// without it, ~36x. See try_operation.hpp. The shallow points are
+// scheduler-sensitive by construction, so they need --benchmark_repetitions
+// more than the rows above do, not less.
 BENCHMARK(BM_QueueTryThroughput<MutexQueue>)
     ->Setup(setup_queue_at_capacity<MutexQueue>)
     ->Teardown(teardown_queue<MutexQueue>)
     ->ArgName("capacity")
-    ->ArgsProduct({{1, 2, 8, 64, 1024}})
+    ->ArgsProduct({capacity_sweep})
     ->Threads(kSpscThreads)
     ->UseRealTime()
     ->MinTime(kMinTimeSeconds)
@@ -310,7 +319,7 @@ BENCHMARK(BM_QueueTryThroughput<SpscQueue>)
     ->Setup(setup_queue_at_capacity<SpscQueue>)
     ->Teardown(teardown_queue<SpscQueue>)
     ->ArgName("capacity")
-    ->ArgsProduct({{1, 2, 8, 64, 1024}})
+    ->ArgsProduct({capacity_sweep})
     ->Threads(kSpscThreads)
     ->UseRealTime()
     ->MinTime(kMinTimeSeconds)
@@ -320,12 +329,11 @@ BENCHMARK(BM_QueueTryThroughput<MpmcQueue>)
     ->Setup(setup_queue_at_capacity<MpmcQueue>)
     ->Teardown(teardown_queue<MpmcQueue>)
     ->ArgName("capacity")
-    ->ArgsProduct({{1, 2, 8, 64, 1024}})
+    ->ArgsProduct({capacity_sweep})
     ->Threads(kSpscThreads)
     ->UseRealTime()
     ->MinTime(kMinTimeSeconds)
     ->Name("MpmcQueue/try_throughput");
-// NOLINTEND(readability-magic-numbers)
 
 // UseRealTime on the round trips too: Google Benchmark divides a rate counter
 // by whichever clock the benchmark selected, so without it these rows report
