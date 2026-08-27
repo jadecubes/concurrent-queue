@@ -3,3 +3,6 @@ InheritParentConfig: true
 # Short names (q, p, i, t, ...) are idiomatic throughout tests; disable the
 # check as directory policy rather than allowlisting each name.
 Checks: '-readability-identifier-length'
+# Cover the shared test headers too: the parent's HeaderFilterRegex is scoped
+# to include/cq, which leaves tests/*.hpp receiving no diagnostics at all.
+HeaderFilterRegex: '(include/cq|tests)/.*'

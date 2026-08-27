@@ -3,8 +3,10 @@
 
 #include <cq/mutex_queue.hpp>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
+#include <memory>
 
 #include <gtest/gtest.h>
 
@@ -58,6 +60,74 @@ TEST(MutexQueueStress, ChecksumReconcilesAcrossProducersAndConsumers) {
   const std::uint64_t expected_sum = kTotalItems * (kTotalItems + 1) / 2;
   EXPECT_EQ(consumed_count.load(), kTotalItems);
   EXPECT_EQ(consumed_sum.load(), expected_sum);
+  EXPECT_EQ(q.size(), 0U);
+}
+
+// The checksum test above transfers std::uint64_t, so it only ever proves the
+// queue's own state is consistent. It cannot prove that memory the producer
+// wrote *before* pushing is visible to the consumer after popping -- and a
+// scalar checksum reconciles either way, as an unsynchronised prototype
+// demonstrated: TSan reported the race while the sum came out correct.
+//
+// This is the transitive half of the mutex's guarantee: the consumer never
+// synchronises with the producer's heap writes directly, only with mutex_.
+// Those writes are sequenced before the producer's unlock, which synchronises
+// with the consumer's lock, which is sequenced before the read. Run under
+// ThreadSanitizer, which checks that edge rather than the resulting value.
+TEST(MutexQueueStress, PayloadWrittenBeforePushIsVisibleAfterPop) {
+  constexpr int kProducers = 2;
+  constexpr int kConsumers = 2;
+  constexpr int kItemsPerProducer = 5'000;
+  constexpr std::size_t kBodyLength = 64;
+  constexpr std::size_t kQueueCapacity = 16;  // small enough to wrap constantly
+
+  struct Payload {
+    std::uint64_t seed = 0;
+    std::array<std::uint64_t, kBodyLength> body{};
+  };
+
+  MutexQueue<std::unique_ptr<Payload>> q(kQueueCapacity);
+
+  auto producers = test_util::spawn_threads(kProducers, [&q](int p) {
+    for (int i = 0; i < kItemsPerProducer; ++i) {
+      auto payload = std::make_unique<Payload>();
+      payload->seed =
+          (static_cast<std::uint64_t>(p) * kItemsPerProducer) + static_cast<std::uint64_t>(i);
+      for (std::size_t k = 0; k < kBodyLength; ++k) {
+        payload->body[k] = payload->seed + k;  // heap writes, before the push
+      }
+      if (!q.push(std::move(payload))) {
+        ADD_FAILURE() << "producer " << p << " push failed at item " << i;
+        return;
+      }
+    }
+  });
+
+  std::atomic<std::uint64_t> verified{0};
+  std::atomic<std::uint64_t> torn{0};
+  auto consumers = test_util::spawn_threads(kConsumers, [&](int /*c*/) {
+    std::unique_ptr<Payload> payload;
+    std::uint64_t local_verified = 0;
+    std::uint64_t local_torn = 0;
+    while (q.pop(payload)) {
+      for (std::size_t k = 0; k < kBodyLength; ++k) {
+        if (payload->body[k] != payload->seed + k) {
+          ++local_torn;
+          break;
+        }
+      }
+      ++local_verified;
+    }
+    verified.fetch_add(local_verified, std::memory_order_relaxed);
+    torn.fetch_add(local_torn, std::memory_order_relaxed);
+  });
+
+  producers.clear();  // joins every producer
+  q.close();          // wake the consumers so they drain and exit
+  consumers.clear();  // joins every consumer
+
+  EXPECT_EQ(verified.load(), static_cast<std::uint64_t>(kProducers) * kItemsPerProducer);
+  EXPECT_EQ(torn.load(), 0U);
   EXPECT_EQ(q.size(), 0U);
 }
 

@@ -1,8 +1,12 @@
-// Member function definitions for cq::MutexQueue. Included at the bottom of
-// mutex_queue.hpp — templates must be visible at every instantiation point,
-// so this file cannot be compiled as a standalone translation unit.
+// Member function definitions for cq::MutexQueue, included at the bottom of
+// mutex_queue.hpp — a template's definitions must be visible at every
+// instantiation point, so they cannot live in a separate object file.
 #ifndef CQ_MUTEX_QUEUE_IPP_
 #define CQ_MUTEX_QUEUE_IPP_
+
+// Self-include so this file also parses standalone in editors; the two
+// include guards collapse the cycle (see STYLE.md > Layout).
+#include "cq/mutex_queue.hpp"  // NOLINT(misc-header-include-cycle)
 
 #include <cstddef>
 #include <mutex>

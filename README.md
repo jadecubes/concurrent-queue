@@ -20,7 +20,7 @@ industrial implementations.
   write up why mine loses (or wins).
 - **Stretch — a thread pool** on top of the MPMC queue.
 
-## Planned layout
+## Layout
 
 ```
 include/cq/     header-only queue implementations
@@ -63,11 +63,15 @@ An **op** is one `push` or one `pop`, so transferring an item costs two ops;
 this is the unit Google Benchmark prints as `items_per_second`.
 
 Per-op figures below are `1 / throughput` — the aggregate cost of one op across
-the whole queue, not per-thread latency.
+the whole queue, not per-thread latency. CV is the coefficient of variation of
+the **throughput** column, matching the `±` beside it. Google Benchmark also
+prints a CV for its Time column, and the two are not interchangeable: they
+agree to within 10% on the threaded rows but differ by ~3.5x on the
+single-thread round trip, so a row mixing the two reads as self-contradictory.
 
 | Benchmark (v1 MutexQueue) | Throughput | Per op | CV |
 |---|---|---|---|
-| single-thread push+pop round trip | 105.1M ± 0.7M ops/s | 9.5 ns (19.0 ns per round trip) | 2.2% |
+| single-thread push+pop round trip | 105.1M ± 0.7M ops/s | 9.5 ns (19.0 ns per round trip) | 0.7% |
 | SPSC (1 producer, 1 consumer) | 35.7M ± 0.5M ops/s | 28.0 ns | 1.4% |
 | MPMC (4 producers, 4 consumers) | 21.6M ± 0.1M ops/s | 46.3 ns | 0.5% |
 

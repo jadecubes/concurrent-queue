@@ -22,6 +22,10 @@ checked in CI).
 - Headers (`.hpp`) declare; template member definitions live in a matching
   `.ipp` included at the bottom of the header. No function bodies in class
   definitions.
+- Each `.ipp` includes its own `.hpp` at the top (Boost.Asio's `impl/*.ipp`
+  convention) so it parses standalone in editors; the include guards on both
+  files collapse the cycle, and the resulting `misc-header-include-cycle` is
+  silenced with a `NOLINT` on that one line.
 - Special member functions (constructors, copy/move operations, destructor)
   stay grouped at the top of the `public:` section, with a comment explaining
   any deleted operations.
