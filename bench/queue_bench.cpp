@@ -301,10 +301,10 @@ BENCHMARK(BM_QueueThroughput<MoodycamelQueue>)
 // vary.
 //
 // Any ratio read across these rows is a statement about the retry policy as
-// much as about the queues. With the yield, Spsc/Mutex at capacity 1 is ~1.5x;
-// without it, ~36x. See try_operation.hpp. The shallow points are
-// scheduler-sensitive by construction, so they need --benchmark_repetitions
-// more than the rows above do, not less.
+// much as about the queues: at capacity 1, Spsc/Mutex is under 2x with the
+// yield and around 40x without it. See try_operation.hpp. The shallow points
+// are scheduler-sensitive by construction, so they need
+// --benchmark_repetitions more than the rows above do, not less.
 BENCHMARK(BM_QueueTryThroughput<MutexQueue>)
     ->Setup(setup_queue_at_capacity<MutexQueue>)
     ->Teardown(teardown_queue<MutexQueue>)
