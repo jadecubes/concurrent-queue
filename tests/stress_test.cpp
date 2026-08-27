@@ -1,5 +1,5 @@
-// Checksum stress test (see README correctness policy): N producers push known
-// values, consumers' totals must reconcile. Run under ThreadSanitizer.
+// Multi-threaded stress tests for cq::MutexQueue (see README correctness
+// policy). Run under ThreadSanitizer.
 
 #include <cq/mutex_queue.hpp>
 
@@ -69,11 +69,9 @@ TEST(MutexQueueStress, ChecksumReconcilesAcrossProducersAndConsumers) {
 // scalar checksum reconciles either way, as an unsynchronised prototype
 // demonstrated: TSan reported the race while the sum came out correct.
 //
-// This is the transitive half of the mutex's guarantee: the consumer never
-// synchronises with the producer's heap writes directly, only with mutex_.
-// Those writes are sequenced before the producer's unlock, which synchronises
-// with the consumer's lock, which is sequenced before the read. Run under
-// ThreadSanitizer, which checks that edge rather than the resulting value.
+// The transitive half of the mutex's guarantee: the consumer synchronises with
+// mutex_, never with the producer's heap writes. TSan is what checks that edge;
+// the comparisons below only catch tearing loud enough to survive it.
 TEST(MutexQueueStress, PayloadWrittenBeforePushIsVisibleAfterPop) {
   constexpr int kProducers = 2;
   constexpr int kConsumers = 2;

@@ -140,10 +140,9 @@ TEST(MutexQueue, CloseWakesBlockedPush) {
 //
 // The throw is armed by a counter rather than a flag on the element, so the
 // element can be enqueued normally and turned hostile only for the dequeue.
-int g_moves_until_throw = -1;      // negative: never throw
-constexpr int kStolenMarker = -1;  // what a stolen-from value is left holding
-constexpr int kSentinel = 99;      // pre-loaded into out, to see if it survives
-constexpr int kHostileValue = 7;   // payload of the element whose push throws
+int g_moves_until_throw = -1;        // negative: never throw
+constexpr int kStolenMarker = -999;  // what a stolen-from value is left holding
+constexpr int kSentinel = 99;        // pre-loaded into out; the failed pop overwrites it
 
 // NOLINTBEGIN(misc-non-private-member-variables-in-classes) -- a two-field
 // test payload; accessors would only obscure what the assertions check.
@@ -155,8 +154,6 @@ struct ThrowingMove {
   ThrowingMove(int v, std::string l) : value(v), label(std::move(l)) {}
   ThrowingMove(ThrowingMove&&) = default;
   ThrowingMove(const ThrowingMove&) = delete;
-  ThrowingMove& operator=(const ThrowingMove&) = delete;
-  ~ThrowingMove() = default;
 
   // Throwing from a move assignment is the entire point of this type, so the
   // two checks that forbid it are suppressed rather than satisfied.
@@ -205,13 +202,39 @@ TEST(MutexQueue, ThrowingPopKeepsQueueInvariantsButNotElementValues) {
   EXPECT_EQ(q.size(), 0U) << "count still reconciles, which is why a checksum harness misses this";
 }
 
+// push() takes T by value, so a failed push has already consumed an rvalue
+// argument while leaving an lvalue one intact. The header documents both, and
+// the asymmetry is what makes a try_push retry loop unsound for move-only T.
+TEST(MutexQueue, FailedPushConsumesRvaluesAndLeavesLvaluesIntact) {
+  MutexQueue<std::string> q(1);
+  ASSERT_TRUE(q.try_push("filler"));  // now full: every push below fails
+
+  const std::string lvalue = "still here";
+  EXPECT_FALSE(q.try_push(lvalue));
+  EXPECT_EQ(lvalue, "still here") << "an lvalue argument is copied, not consumed";
+
+  std::string rvalue = "consumed";
+  EXPECT_FALSE(q.try_push(std::move(rvalue)));
+  // Reading a moved-from object is the assertion, not an accident.
+  // NOLINTNEXTLINE(bugprone-use-after-move)
+  EXPECT_TRUE(rvalue.empty()) << "an rvalue argument is moved from even on failure";
+
+  // The move-only consequence: the value is unrecoverable after a failed
+  // attempt, which is why the header sends move-only T to blocking push().
+  MutexQueue<std::unique_ptr<int>> mq(1);
+  ASSERT_TRUE(mq.try_push(std::make_unique<int>(1)));
+  auto owned = std::make_unique<int>(kSentinel);
+  EXPECT_FALSE(mq.try_push(std::move(owned)));
+  // NOLINTNEXTLINE(bugprone-use-after-move)
+  EXPECT_EQ(owned, nullptr) << "retrying with the same object would push a husk";
+}
+
 TEST(MutexQueue, ThrowingPushEnqueuesNothing) {
   // The push side genuinely upholds its guarantee: enqueue_locked writes the
   // slot before it advances the indices, so a throw leaves the queue empty.
   MutexQueue<ThrowingMove> q(2);
-  ThrowingMove hostile{kHostileValue, "seven"};
   g_moves_until_throw = 0;
-  EXPECT_THROW(static_cast<void>(q.try_push(std::move(hostile))), std::runtime_error);
+  EXPECT_THROW(static_cast<void>(q.try_push({7, "seven"})), std::runtime_error);
   g_moves_until_throw = -1;
   EXPECT_EQ(q.size(), 0U);
 }
@@ -222,6 +245,11 @@ TEST(MutexQueue, ThrowingPushEnqueuesNothing) {
 TEST(MutexQueue, NonBlockingRetryLoopsTerminateViaClosed) {
   MutexQueue<int> q(1);
   ASSERT_TRUE(q.try_push(1));
+  // Full but still open: try_push fails and closed() must say "keep retrying".
+  // Without this the loops below break on their first pass and never exercise
+  // the distinction the test is named for.
+  ASSERT_FALSE(q.try_push(2));
+  ASSERT_FALSE(q.closed()) << "closed() must distinguish full-and-open from closed";
   q.close();
 
   int spins = 0;

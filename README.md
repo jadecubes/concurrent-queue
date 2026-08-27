@@ -64,10 +64,24 @@ this is the unit Google Benchmark prints as `items_per_second`.
 
 Per-op figures below are `1 / throughput` — the aggregate cost of one op across
 the whole queue, not per-thread latency. CV is the coefficient of variation of
-the **throughput** column, matching the `±` beside it. Google Benchmark also
-prints a CV for its Time column, and the two are not interchangeable: they
-agree to within 10% on the threaded rows but differ by ~3.5x on the
-single-thread round trip, so a row mixing the two reads as self-contradictory.
+the **throughput** column, matching the `±` beside it, not of Google Benchmark's
+Time column.
+
+Those two are not interchangeable, and the reason is this repo's own benchmark
+configuration rather than a quirk of the tool: a rate counter is divided by
+whichever clock the benchmark selected. The threaded registrations chain
+`UseRealTime()`, so for them the throughput CV and the Time CV are the same
+quantity by construction. The single-thread round trip does not, so its
+throughput is normalised by CPU time while its Time column still reports real
+time — around 2.8x more variable here. A row mixing the two columns reads as
+self-contradictory, which is exactly what the first row did before this was
+noticed.
+
+The consequence worth stating plainly: the round-trip row is ops per
+CPU-second, the threaded rows are ops per wall-second. On an otherwise idle
+machine they differ by about 1%, so the ~3x gap below is real — but the rows
+are not strictly the same unit, and `bench/queue_bench.cpp`'s claim that they
+"compare directly" is true of the item count and not of the clock.
 
 | Benchmark (v1 MutexQueue) | Throughput | Per op | CV |
 |---|---|---|---|

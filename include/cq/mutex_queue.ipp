@@ -4,10 +4,11 @@
 #ifndef CQ_MUTEX_QUEUE_IPP_
 #define CQ_MUTEX_QUEUE_IPP_
 
-// Self-include so this file also parses standalone in editors; the two
-// include guards collapse the cycle (see STYLE.md > Layout).
+// Self-include so this file also parses standalone in editors (see
+// STYLE.md > Layout).
 #include "cq/mutex_queue.hpp"  // NOLINT(misc-header-include-cycle)
 
+#include <cassert>
 #include <cstddef>
 #include <mutex>
 #include <stdexcept>
@@ -111,6 +112,7 @@ std::size_t MutexQueue<T>::capacity() const {
 
 template <typename T>
 void MutexQueue<T>::enqueue_locked(T&& value) {
+  assert(size_ < buffer_.size() && "enqueue_locked called on a full ring");
   buffer_[tail_] = std::move(value);
   tail_ = next(tail_);
   ++size_;
@@ -118,6 +120,7 @@ void MutexQueue<T>::enqueue_locked(T&& value) {
 
 template <typename T>
 void MutexQueue<T>::dequeue_locked(T& out) {
+  assert(size_ > 0 && "dequeue_locked called on an empty ring");
   out = std::move(buffer_[head_]);
   head_ = next(head_);
   --size_;

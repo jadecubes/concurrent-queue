@@ -32,16 +32,22 @@ jobs:
       - name: Test
         run: ctest --test-dir build-tsan --output-on-failure --no-tests=error
 
-  bench-build:
-    name: Benchmarks (Release, smoke-run)
+  release:
+    name: Tests + benchmark smoke-run (Release)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Tests stay ON here deliberately. Without this job they only ever run
+      # Debug+TSan, which compiles no NDEBUG path, applies no optimiser, and
+      # explores a much narrower interleaving space (the checksum stress test
+      # is ~16x less contended under TSan's slowdown). None of that hides a
+      # defect in v1, but the roadmap's lock-free v2 is precisely the code
+      # where -O0 and -O3 diverge.
       - name: Configure
-        run: cmake -B build-rel -DCMAKE_BUILD_TYPE=Release -DCQ_BUILD_TESTS=OFF
+        run: cmake -B build-rel -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build-rel
-      - name: Smoke-run benchmarks
+      - name: Test and smoke-run benchmarks
         run: ctest --test-dir build-rel --output-on-failure --no-tests=error
 
   lint:

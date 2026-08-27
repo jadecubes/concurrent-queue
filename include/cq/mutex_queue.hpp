@@ -12,14 +12,27 @@ namespace cq {
 /// not_full / not_empty condition variables and close() shutdown semantics.
 ///
 /// Thread-safety: after construction, all member functions may be called
-/// concurrently from any number of producer and consumer threads. size()
-/// returns an advisory snapshot — drive control flow off the push/pop
-/// return values instead. closed() has one sanctioned use: try_push() and
-/// try_pop() return false for "not now" and for "never again" alike, so a
-/// non-blocking retry loop needs closed() to terminate —
-/// `while (!q.try_push(v)) { if (q.closed()) break; ... }`. Without that
-/// test the loop spins forever after close(). Blocking push()/pop() need
-/// no such check: they return false only when retrying is futile.
+/// concurrently from any number of producer and consumer threads.
+///
+/// try_push() and try_pop() return false for "not now" and for "never
+/// again" alike, so a non-blocking retry loop needs closed() to terminate;
+/// without that test it spins forever after close(). Blocking push()/pop()
+/// need no such check — they return false only when retrying is futile.
+///
+/// A try_push() retry loop must re-materialise its argument every pass.
+/// try_push takes T by value, so a failed attempt has already consumed an
+/// rvalue argument; retrying with the same object pushes a moved-from
+/// husk, silently, with no diagnostic:
+///
+///     while (!q.try_push(make_value())) {  // NOT try_push(std::move(v))
+///       if (q.closed()) break;
+///     }
+///
+/// For move-only T there is no correct try_push() retry loop at all — the
+/// value cannot be recovered from a failed attempt, and the API returns
+/// only bool. Use blocking push(), which needs no closed() test. For
+/// copyable T the loop above is correct but copy-constructs the argument on
+/// every spin.
 ///
 /// Lifetime: the queue must outlive every thread using it — call close()
 /// and join all producers/consumers before destruction. Destroying the
@@ -31,7 +44,9 @@ namespace cq {
 /// failing push()/try_push() enqueues nothing, but a failing pop()/try_pop()
 /// leaves both out and the still-queued element in valid-but-unspecified
 /// states: retrying the pop yields a hollowed element, not the original.
-/// None of this is reachable for a T whose move assignment is noexcept.
+/// For a T whose move assignment is noexcept the queue is never left in any
+/// of these states — but push()/try_push() can still throw while
+/// constructing their by-value parameter, before the queue is touched.
 ///
 /// pop()/try_pop() take an out-parameter rather than returning
 /// std::optional<T> so a drain loop can reuse one destination's capacity —
@@ -56,27 +71,30 @@ class MutexQueue {
   MutexQueue& operator=(MutexQueue&&) = delete;
 
   /// Enqueues a value, blocking while the queue is full.
-  /// @param value Element to enqueue; consumed even when the push fails.
+  /// @param value Element to enqueue, taken by value. An rvalue argument is
+  ///   moved from at the call — including when the push fails, in which case
+  ///   the value is discarded. An lvalue argument is copied and left intact.
   /// @return false if the queue is closed (the value is dropped).
   [[nodiscard]] bool push(T value);
 
   /// Enqueues a value without blocking.
-  /// @param value Element to enqueue; consumed even when the push fails.
-  /// @return false if the queue is full or closed; closed() tells them
-  ///   apart, and a retry loop needs it to terminate.
+  /// @param value Element to enqueue, taken by value; see push() above, and
+  ///   the retry-loop caveat under Thread-safety.
+  /// @return false if the queue is full or closed; closed() tells them apart
+  ///   (see Thread-safety above).
   [[nodiscard]] bool try_push(T value);
 
   /// Dequeues into out, blocking while the queue is empty and open.
   /// @param[out] out Receives the dequeued element on success; untouched on
-  ///   failure.
+  ///   failure, unless T's move assignment throws (see Exceptions above).
   /// @return false once the queue is closed and drained.
   [[nodiscard]] bool pop(T& out);
 
   /// Dequeues into out without blocking.
   /// @param[out] out Receives the dequeued element on success; untouched on
   ///   failure, unless T's move assignment throws (see Exceptions above).
-  /// @return false if the queue is empty — including once it is closed and
-  ///   drained, which closed() identifies and a retry loop needs to stop.
+  /// @return false if the queue is empty, including once it is closed and
+  ///   drained; closed() tells them apart (see Thread-safety above).
   [[nodiscard]] bool try_pop(T& out);
 
   /// Closes the queue and wakes all blocked producers and consumers.
