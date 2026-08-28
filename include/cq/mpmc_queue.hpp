@@ -32,11 +32,11 @@ namespace cq {
 ///
 /// Exceptions: if T's move assignment throws while a slot is claimed, that
 /// slot's sequence is never re-published, and the queue does not merely
-/// degrade: the consumer side can never advance past the stranded ticket, and
-/// the producer side stops as soon as the ring wraps back onto it. Unlike the
-/// locked queue there is no way to return a claimed ticket. Use element types whose move assignment
-/// cannot throw — the static_assert below enforces that, because the damage is silent and
-/// unrecoverable.
+/// degrade: the consumer can never advance past the stranded ticket, and the
+/// producer stops as soon as the ring wraps back onto it. Unlike the locked
+/// queue there is no way to return a claimed ticket. Use element types
+/// whose move assignment cannot throw — the static_assert below enforces
+/// it, because the damage is silent and unrecoverable.
 ///
 /// @tparam T Element type. Must be DefaultConstructible (ring slots are
 ///   constructed up front), MoveAssignable, and — unlike the other two
@@ -48,8 +48,8 @@ template <typename T>
 class MpmcQueue {
   // Prose cannot enforce this and the failure is silent: a throwing move
   // assignment leaves a claimed ticket whose sequence is never re-published,
-  // so try_push()/try_pop() report that slot full or empty forever and the
-  // blocking push()/pop() spin on it.
+  // so try_push()/try_pop() report that slot full or empty forever and
+  // the blocking push()/pop() spin on it.
   static_assert(std::is_nothrow_move_assignable_v<T>,
                 "MpmcQueue requires a T whose move assignment is noexcept: a throw would "
                 "strand a claimed slot and permanently degrade the queue");

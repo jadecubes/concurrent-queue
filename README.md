@@ -77,8 +77,9 @@ element. `SpscQueue`'s bulk `try_push_n`/`try_pop_n` are the exception: they
 publish one index per batch, so they reject a throwing `T` at compile time
 rather than lose or duplicate elements mid-batch.
 `MpmcQueue` cannot survive it at all: a throw strands a claimed ticket whose
-sequence is never re-published, and every later operation on that slot spins
-forever. It therefore refuses such a `T` at compile time rather than degrading
+sequence is never re-published, so `try_push`/`try_pop` report that slot full
+or empty forever and the blocking `push`/`pop` spin on it — the consumer never
+advances past the ticket, and the producer stops once the ring wraps onto it. It therefore refuses such a `T` at compile time rather than degrading
 silently.
 
 ### Non-blocking loops
@@ -118,13 +119,15 @@ for (T item;;) {
 ```
 
 The re-attempt is load-bearing on all three, not defensive. `try_pop`,
-`closed()` and the second `try_pop` are three separate acquisitions — no lock
-or ordering spans them — so breaking on `closed()` alone strands whatever
-arrived in the window, and a form that breaks only when the re-attempt *fails*
-is worse still: the element that attempt just retrieved is overwritten by the
-next loop condition.
+`closed()` and the second `try_pop` are three separate steps, and nothing makes
+them one — so breaking on `closed()` alone strands whatever arrived in the
+window, and a form that breaks only when the re-attempt *fails* is worse still:
+the element that attempt just retrieved is overwritten by the next loop
+condition.
 
-Measured against a producer that pushes twice and then closes, per 400 trials:
+Measured on an Apple M2 Pro, Release, against a producer that pushes twice and
+then closes, per 400 trials — the ratio between the rows is the point, not the
+absolute counts, which move with the machine:
 
 | | break on `closed()` alone | the loop above |
 |---|---|---|
