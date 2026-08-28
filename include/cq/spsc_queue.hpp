@@ -23,15 +23,22 @@ namespace cq {
 /// try_push) and at most one thread the consumer side (pop, try_pop),
 /// concurrently with each other. close(), closed(), size(), and capacity()
 /// may be called from any thread. closed() and size() return advisory
-/// snapshots — drive control flow off the push/pop return values instead.
+/// snapshots — drive control flow off the push/pop return values instead,
+/// with one exception: try_push()/try_pop() return false for "not now" and
+/// for "never again" alike, so a non-blocking retry loop needs closed() to
+/// terminate. See try_push() for how such a loop must handle its argument.
 ///
 /// Lifetime: the queue must outlive both threads using it — call close() and
 /// join the producer/consumer before destruction. Destroying the queue while
 /// a thread is spinning in push()/pop() is undefined behavior.
 ///
-/// Exceptions: if T's move assignment throws, the failing push()/try_push()
-/// enqueues nothing and the failing pop()/try_pop() leaves the element
-/// queued — the queue itself stays consistent.
+/// Exceptions: if T's move assignment throws, the queue's own invariants hold
+/// — its indices do not move, so nothing is lost or duplicated and the element
+/// count still reconciles. Element *values* are not protected: a failing
+/// push()/try_push() enqueues nothing, but a failing pop()/try_pop() leaves
+/// both out and the still-queued element in valid-but-unspecified states, so
+/// retrying the pop yields a hollowed element rather than the original. None
+/// of this is reachable for a T whose move assignment is noexcept.
 ///
 /// @tparam T Element type. Must be DefaultConstructible (ring slots are
 ///   constructed up front) and MoveAssignable.
@@ -56,13 +63,29 @@ class SpscQueue {
 
   /// Enqueues a value, waiting while the queue is full (brief spin, then a
   /// timed sleep — near-zero CPU while blocked). Producer side.
-  /// @param value Element to enqueue; consumed even when the push fails.
+  /// @param value Element to enqueue, taken by value. An rvalue argument is
+  ///   moved from at the call — including when the push fails, in which case
+  ///   the value is discarded. An lvalue argument is copied and left intact.
   /// @return false if the queue is closed (the value is dropped).
   [[nodiscard]] bool push(T value);
 
   /// Enqueues a value without blocking. Producer side.
-  /// @param value Element to enqueue; consumed even when the push fails.
-  /// @return false if the queue is full or closed.
+  ///
+  /// A retry loop must re-materialise its argument every pass: this is a
+  /// by-value sink, so a failed attempt has already consumed an rvalue and
+  /// retrying with the same object pushes a moved-from husk, silently.
+  ///
+  ///     while (!q.try_push(make_value())) {  // NOT try_push(std::move(v))
+  ///       if (q.closed()) break;
+  ///     }
+  ///
+  /// A move-only value that cannot be re-created has no correct retry loop —
+  /// it is unrecoverable after a failed pass. Use blocking push().
+  /// @param value Element to enqueue, taken by value. An rvalue argument is
+  ///   moved from at the call — including when the push fails, in which case
+  ///   the value is discarded. An lvalue argument is copied and left intact.
+  /// @return false if the queue is full or closed; closed() tells them apart,
+  ///   and a retry loop needs it to terminate.
   [[nodiscard]] bool try_push(T value);
 
   /// Dequeues into out, waiting while the queue is empty and open (brief

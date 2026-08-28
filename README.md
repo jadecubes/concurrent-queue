@@ -49,8 +49,8 @@ entirely, which is only possible by giving something else up.
 
 ## The contract
 
-All three promise the same things. Choose between them on threading, not on
-behaviour.
+All three promise the same things, with one exception noted below. Choose
+between them on threading, not on behaviour.
 
 | | |
 |---|---|
@@ -61,10 +61,22 @@ behaviour.
 | **Shutdown** | `close()` refuses new items and wakes every waiter |
 | **Draining** | Items already queued still come out after `close()` |
 | **Loss** | Nothing accepted is dropped, duplicated, or reordered |
-| **Element type** | Any `T` that is `DefaultConstructible` and `MoveAssignable` |
+| **Element type** | Any `T` that is `DefaultConstructible` and `MoveAssignable` — plus `noexcept` move assignment for `MpmcQueue`, which `static_assert`s it |
 | **Lifetime** | The queue must outlive every thread using it |
+| **Non-blocking loops** | `try_push`/`try_pop` return `false` for "not now" and "never again" alike; `closed()` is what lets a retry loop terminate |
+| **A throwing move** | The one place the three differ — see below |
 
 Every operation reports whether it succeeded, and every one is `[[nodiscard]]`.
+
+**If `T`'s move assignment can throw**, that is where the three part company.
+`MutexQueue` and `SpscQueue` keep their indices intact — nothing is lost or
+duplicated, and the count still reconciles — but the element values are not
+protected: a failed pop leaves both the destination and the still-queued
+element in valid-but-unspecified states, so retrying yields a hollowed element.
+`MpmcQueue` cannot survive it at all: a throw strands a claimed ticket whose
+sequence is never re-published, and every later operation on that slot spins
+forever. It therefore refuses such a `T` at compile time rather than degrading
+silently.
 
 ## The three queues
 
@@ -78,6 +90,7 @@ as a sequence of trades.
 | Exceeding that | — | **undefined behaviour, no diagnostic** | — |
 | Bounded wait (`try_push_for`) | yes | no | no |
 | Bulk ops (`try_push_n` / `try_pop_n`) | no | yes | no |
+| Throwing move assignment | survivable | survivable | rejected at compile time |
 | A blocked thread | sleeps | spins briefly, then sleeps | spins briefly, then sleeps |
 | Built from | mutex + condition variables | atomics only | atomics only |
 

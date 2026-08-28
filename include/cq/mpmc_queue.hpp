@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <type_traits>
 #include <vector>
 
 #include "cq/backoff.hpp"
@@ -20,7 +21,10 @@ namespace cq {
 /// Thread-safety: after construction, all member functions may be called
 /// concurrently from any number of threads. closed() and size() return
 /// advisory snapshots — drive control flow off the push/pop return values
-/// instead.
+/// instead, with one exception: try_push()/try_pop() return false for "not
+/// now" and for "never again" alike, so a non-blocking retry loop needs
+/// closed() to terminate. See try_push() for how such a loop must handle its
+/// argument.
 ///
 /// Lifetime: the queue must outlive every thread using it — call close() and
 /// join all producers/consumers before destruction. Destroying the queue
@@ -30,7 +34,8 @@ namespace cq {
 /// slot's sequence is never re-published and the queue degrades (later
 /// operations on the slot spin); unlike the locked queue there is no way to
 /// return a claimed ticket. Use element types whose move assignment cannot
-/// throw.
+/// throw — the static_assert below enforces that, because the damage is
+/// silent and unrecoverable.
 ///
 /// @tparam T Element type. Must be DefaultConstructible (ring slots are
 ///   constructed up front) and MoveAssignable.
@@ -39,6 +44,13 @@ template <typename T>
 // counter gets a private cache line (see cq/cache_line.hpp).
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class MpmcQueue {
+  // Prose cannot enforce this and the failure is silent: a throwing move
+  // assignment leaves a claimed ticket whose sequence is never re-published,
+  // so every later operation on that slot spins forever.
+  static_assert(std::is_nothrow_move_assignable_v<T>,
+                "MpmcQueue requires a T whose move assignment is noexcept: a throw would "
+                "strand a claimed slot and permanently degrade the queue");
+
  public:
   /// @param capacity Fixed number of slots; never resized.
   /// @throws std::invalid_argument if capacity is 0.
@@ -52,13 +64,29 @@ class MpmcQueue {
   MpmcQueue& operator=(MpmcQueue&&) = delete;
 
   /// Enqueues a value, spinning while the queue is full.
-  /// @param value Element to enqueue; consumed even when the push fails.
+  /// @param value Element to enqueue, taken by value. An rvalue argument is
+  ///   moved from at the call — including when the push fails, in which case
+  ///   the value is discarded. An lvalue argument is copied and left intact.
   /// @return false if the queue is closed (the value is dropped).
   [[nodiscard]] bool push(T value);
 
   /// Enqueues a value without blocking.
-  /// @param value Element to enqueue; consumed even when the push fails.
-  /// @return false if the queue is full or closed.
+  ///
+  /// A retry loop must re-materialise its argument every pass: this is a
+  /// by-value sink, so a failed attempt has already consumed an rvalue and
+  /// retrying with the same object pushes a moved-from husk, silently.
+  ///
+  ///     while (!q.try_push(make_value())) {  // NOT try_push(std::move(v))
+  ///       if (q.closed()) break;
+  ///     }
+  ///
+  /// A move-only value that cannot be re-created has no correct retry loop —
+  /// it is unrecoverable after a failed pass. Use blocking push().
+  /// @param value Element to enqueue, taken by value. An rvalue argument is
+  ///   moved from at the call — including when the push fails, in which case
+  ///   the value is discarded. An lvalue argument is copied and left intact.
+  /// @return false if the queue is full or closed; closed() tells them apart,
+  ///   and a retry loop needs it to terminate.
   [[nodiscard]] bool try_push(T value);
 
   /// Dequeues into out, spinning while the queue is empty and open.
