@@ -244,7 +244,10 @@ TYPED_TEST(QueueContract, FailedPushConsumesRvaluesAndLeavesLvaluesIntact) {
 
   std::string rvalue = "consumed";
   EXPECT_FALSE(q.try_push(std::move(rvalue)));
-  // Reading a moved-from object is the assertion, not an accident.
+  // Reading a moved-from object is the assertion, not an accident. A
+  // moved-from std::string is only valid-but-unspecified by the standard, so
+  // this half is a libstdc++/libc++ observation; the unique_ptr case below is
+  // the one the standard actually guarantees.
   // NOLINTNEXTLINE(bugprone-use-after-move)
   EXPECT_TRUE(rvalue.empty()) << "an rvalue argument is moved from even on failure";
 

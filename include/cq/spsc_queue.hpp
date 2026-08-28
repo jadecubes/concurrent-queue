@@ -4,7 +4,6 @@
 #include <atomic>
 #include <cstddef>
 #include <span>
-#include <type_traits>
 #include <vector>
 
 #include "cq/backoff.hpp"
@@ -36,11 +35,15 @@ namespace cq {
 /// Exceptions: for the single-element operations, if T's move assignment
 /// throws the queue's own invariants hold — its indices do not move, so
 /// nothing is lost or duplicated and the element count still reconciles.
-/// try_push_n()/try_pop_n() cannot offer that: they publish one index for the
-/// whole batch, so a throw part-way through would strand the moved elements
-/// outside both the span and the queue, or inside both. They therefore
-/// static_assert a noexcept move assignment. Element *values* are not protected: a failing
-/// push()/try_push() enqueues nothing, but a failing pop()/try_pop() leaves
+/// Element *values* are not protected: a failing pop()/try_pop() leaves both
+/// out and the still-queued element in valid-but-unspecified states, so
+/// retrying the pop may yield a hollowed element rather than the original.
+///
+/// try_push_n()/try_pop_n() cannot offer even the first guarantee: they
+/// publish one index for the whole batch, so a throw part-way through would
+/// strand the moved elements outside both the span and the queue, or inside
+/// both. They therefore static_assert a noexcept move assignment. Element *values* are not
+/// protected: a failing push()/try_push() enqueues nothing, but a failing pop()/try_pop() leaves
 /// both out and the still-queued element in valid-but-unspecified states, so
 /// retrying the pop may yield a hollowed element rather than the original. None
 /// of this is reachable for a T whose move assignment is noexcept.

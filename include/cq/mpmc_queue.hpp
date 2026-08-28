@@ -39,8 +39,8 @@ namespace cq {
 /// unrecoverable.
 ///
 /// @tparam T Element type. Must be DefaultConstructible (ring slots are
-///   constructed up front), MoveAssignable, and — unlike the other two queues
-///   — nothrow-MoveAssignable; see Exceptions above.
+///   constructed up front), MoveAssignable, and — unlike the other two
+///   queues — nothrow-MoveAssignable; see Exceptions above.
 template <typename T>
 // The "excessive padding" the analyzer flags is deliberate: each position
 // counter gets a private cache line (see cq/cache_line.hpp).
@@ -48,7 +48,8 @@ template <typename T>
 class MpmcQueue {
   // Prose cannot enforce this and the failure is silent: a throwing move
   // assignment leaves a claimed ticket whose sequence is never re-published,
-  // so every later operation on that slot spins forever.
+  // so try_push()/try_pop() report that slot full or empty forever and the
+  // blocking push()/pop() spin on it.
   static_assert(std::is_nothrow_move_assignable_v<T>,
                 "MpmcQueue requires a T whose move assignment is noexcept: a throw would "
                 "strand a claimed slot and permanently degrade the queue");

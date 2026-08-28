@@ -103,7 +103,9 @@ to "closed" but does not close it: it too drops the value it was given.
 **Consumer.** Observing `closed()` is not the same as the queue being empty: a
 producer may have pushed between the failed `try_pop` and the check. Re-attempt
 once after observing it, and take whatever that attempt gives — which is what
-blocking `pop()` does (`if (closed()) return try_pop(out);`):
+`SpscQueue::pop`/`MpmcQueue::pop` do verbatim (`if (closed()) return
+try_pop(out);`). `MutexQueue::pop` reaches the same result differently, by
+resolving "closed and drained" under a single lock:
 
 ```cpp
 for (T item;;) {
@@ -115,18 +117,28 @@ for (T item;;) {
 }
 ```
 
-The re-attempt is load-bearing, not defensive. Breaking on `closed()` alone
-drops whatever arrived in the window; so does a form that only breaks when the
-re-attempt *fails*, because the successful re-attempt's element is then
-overwritten by the next loop condition. Measured against a producer that
-pushes twice and closes: those two forms lost an element in 91 of 400 trials,
-the loop above in none.
+The re-attempt is load-bearing on all three, not defensive. `try_pop`,
+`closed()` and the second `try_pop` are three separate acquisitions — no lock
+or ordering spans them — so breaking on `closed()` alone strands whatever
+arrived in the window, and a form that breaks only when the re-attempt *fails*
+is worse still: the element that attempt just retrieved is overwritten by the
+next loop condition.
 
-For `SpscQueue` and `MpmcQueue` the re-attempt is also what orders you after
-the producer's last push — their `close()` documents that producers must stop
-first, and the re-attempt is how a consumer observes that they have. Under
-`MutexQueue` both reads happen under one lock, so "closed and drained" has no
-window and the re-attempt is merely harmless.
+Measured against a producer that pushes twice and then closes, per 400 trials:
+
+| | break on `closed()` alone | the loop above |
+|---|---|---|
+| `MutexQueue` | 139–178 lost | 0 |
+| `SpscQueue` | 4–10 lost | 0 |
+| `MpmcQueue` | 2–6 lost | 0 |
+
+`MutexQueue` has the widest window by roughly thirty times, not the narrowest:
+the lock hand-off after its failed `try_pop` is long enough for the producer to
+complete both pushes *and* the close before the consumer reacquires. What it
+genuinely lacks is a different hazard — a push racing `close()` — which is why
+its `close()` carries no stop-producers-first precondition while `SpscQueue`'s
+and `MpmcQueue`'s do. For those two, the re-attempt is also what orders the
+consumer after the producer's last push.
 
 ## The three queues
 
