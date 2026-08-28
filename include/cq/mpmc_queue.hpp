@@ -31,14 +31,16 @@ namespace cq {
 /// while a thread is spinning in push()/pop() is undefined behavior.
 ///
 /// Exceptions: if T's move assignment throws while a slot is claimed, that
-/// slot's sequence is never re-published and the queue degrades (later
-/// operations on the slot spin); unlike the locked queue there is no way to
-/// return a claimed ticket. Use element types whose move assignment cannot
-/// throw — the static_assert below enforces that, because the damage is
-/// silent and unrecoverable.
+/// slot's sequence is never re-published, and the queue does not merely
+/// degrade: the consumer side can never advance past the stranded ticket, and
+/// the producer side stops as soon as the ring wraps back onto it. Unlike the
+/// locked queue there is no way to return a claimed ticket. Use element types whose move assignment
+/// cannot throw — the static_assert below enforces that, because the damage is silent and
+/// unrecoverable.
 ///
 /// @tparam T Element type. Must be DefaultConstructible (ring slots are
-///   constructed up front) and MoveAssignable.
+///   constructed up front), MoveAssignable, and — unlike the other two queues
+///   — nothrow-MoveAssignable; see Exceptions above.
 template <typename T>
 // The "excessive padding" the analyzer flags is deliberate: each position
 // counter gets a private cache line (see cq/cache_line.hpp).
@@ -67,21 +69,17 @@ class MpmcQueue {
   /// @param value Element to enqueue, taken by value. An rvalue argument is
   ///   moved from at the call — including when the push fails, in which case
   ///   the value is discarded. An lvalue argument is copied and left intact.
-  /// @return false if the queue is closed (the value is dropped).
+  /// @return false if the queue is closed. The value is dropped: blocking
+  ///   push() narrows the window in which a move-only argument can be lost,
+  ///   but does not close it.
   [[nodiscard]] bool push(T value);
 
   /// Enqueues a value without blocking.
   ///
-  /// A retry loop must re-materialise its argument every pass: this is a
+  /// A retry loop must re-materialise its argument every pass — this is a
   /// by-value sink, so a failed attempt has already consumed an rvalue and
-  /// retrying with the same object pushes a moved-from husk, silently.
-  ///
-  ///     while (!q.try_push(make_value())) {  // NOT try_push(std::move(v))
-  ///       if (q.closed()) break;
-  ///     }
-  ///
-  /// A move-only value that cannot be re-created has no correct retry loop —
-  /// it is unrecoverable after a failed pass. Use blocking push().
+  /// retrying with the same object pushes a moved-from husk. See the README's
+  /// "Non-blocking loops" section for the worked idiom and its limits.
   /// @param value Element to enqueue, taken by value. An rvalue argument is
   ///   moved from at the call — including when the push fails, in which case
   ///   the value is discarded. An lvalue argument is copied and left intact.
@@ -95,8 +93,8 @@ class MpmcQueue {
   [[nodiscard]] bool pop(T& out);
 
   /// Dequeues into out without blocking.
-  /// @param[out] out Receives the dequeued element on success; untouched on
-  ///   failure.
+  /// @param[out] out Receives the dequeued element on success; untouched on a
+  ///   false return; disturbed if T's move assignment throws (see Exceptions).
   /// @return false if the queue is empty (including transiently, while a
   ///   producer has claimed the next slot but not yet published it).
   [[nodiscard]] bool try_pop(T& out);

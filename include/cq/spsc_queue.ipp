@@ -138,6 +138,14 @@ void SpscQueue<T>::dequeue(std::size_t head, T& out) {
 
 template <typename T>
 std::size_t SpscQueue<T>::try_push_n(std::span<T> items) {
+  // Bulk publishes one index for the whole batch, so a throw part-way through
+  // would leave the moved elements outside both the caller's span and the
+  // queue (push) or inside both (pop) — the only data loss or duplication
+  // anywhere in this library. The single-element ops survive a throw and do
+  // not carry this requirement.
+  static_assert(std::is_nothrow_move_assignable_v<T>,
+                "SpscQueue bulk transfer requires a T whose move assignment is noexcept: "
+                "a throw mid-batch loses or duplicates elements");
   if (items.empty() || closed_.load(std::memory_order_relaxed)) {
     return 0;
   }
@@ -162,6 +170,14 @@ std::size_t SpscQueue<T>::try_push_n(std::span<T> items) {
 
 template <typename T>
 std::size_t SpscQueue<T>::try_pop_n(std::span<T> out) {
+  // Bulk publishes one index for the whole batch, so a throw part-way through
+  // would leave the moved elements outside both the caller's span and the
+  // queue (push) or inside both (pop) — the only data loss or duplication
+  // anywhere in this library. The single-element ops survive a throw and do
+  // not carry this requirement.
+  static_assert(std::is_nothrow_move_assignable_v<T>,
+                "SpscQueue bulk transfer requires a T whose move assignment is noexcept: "
+                "a throw mid-batch loses or duplicates elements");
   if (out.empty()) {
     return 0;
   }

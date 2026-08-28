@@ -206,15 +206,19 @@ TYPED_TEST(QueueContract, NonBlockingRetryLoopsTerminateViaClosed) {
     ASSERT_LT(++spins, 1000) << "try_push loop never terminated";
   }
 
+  // The consumer idiom re-attempts after observing closed(): a producer may
+  // have pushed between the failed try_pop and the check, and breaking on
+  // closed() alone strands that element. Verified separately: the naive form
+  // exits with size() == 1.
   int out = 0;
-  ASSERT_TRUE(q.try_pop(out));  // the pre-close element still drains
   spins = 0;
   while (!q.try_pop(out)) {
-    if (q.closed()) {
+    if (q.closed() && !q.try_pop(out)) {
       break;
     }
     ASSERT_LT(++spins, 1000) << "try_pop loop never terminated";
   }
+  EXPECT_EQ(out, 1) << "the pre-close element must still drain";
   EXPECT_EQ(q.size(), 0U);
 }
 

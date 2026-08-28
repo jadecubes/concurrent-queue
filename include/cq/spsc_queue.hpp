@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstddef>
 #include <span>
+#include <type_traits>
 #include <vector>
 
 #include "cq/backoff.hpp"
@@ -32,12 +33,16 @@ namespace cq {
 /// join the producer/consumer before destruction. Destroying the queue while
 /// a thread is spinning in push()/pop() is undefined behavior.
 ///
-/// Exceptions: if T's move assignment throws, the queue's own invariants hold
-/// — its indices do not move, so nothing is lost or duplicated and the element
-/// count still reconciles. Element *values* are not protected: a failing
+/// Exceptions: for the single-element operations, if T's move assignment
+/// throws the queue's own invariants hold — its indices do not move, so
+/// nothing is lost or duplicated and the element count still reconciles.
+/// try_push_n()/try_pop_n() cannot offer that: they publish one index for the
+/// whole batch, so a throw part-way through would strand the moved elements
+/// outside both the span and the queue, or inside both. They therefore
+/// static_assert a noexcept move assignment. Element *values* are not protected: a failing
 /// push()/try_push() enqueues nothing, but a failing pop()/try_pop() leaves
 /// both out and the still-queued element in valid-but-unspecified states, so
-/// retrying the pop yields a hollowed element rather than the original. None
+/// retrying the pop may yield a hollowed element rather than the original. None
 /// of this is reachable for a T whose move assignment is noexcept.
 ///
 /// @tparam T Element type. Must be DefaultConstructible (ring slots are
@@ -66,21 +71,17 @@ class SpscQueue {
   /// @param value Element to enqueue, taken by value. An rvalue argument is
   ///   moved from at the call — including when the push fails, in which case
   ///   the value is discarded. An lvalue argument is copied and left intact.
-  /// @return false if the queue is closed (the value is dropped).
+  /// @return false if the queue is closed. The value is dropped: blocking
+  ///   push() narrows the window in which a move-only argument can be lost,
+  ///   but does not close it.
   [[nodiscard]] bool push(T value);
 
   /// Enqueues a value without blocking. Producer side.
   ///
-  /// A retry loop must re-materialise its argument every pass: this is a
+  /// A retry loop must re-materialise its argument every pass — this is a
   /// by-value sink, so a failed attempt has already consumed an rvalue and
-  /// retrying with the same object pushes a moved-from husk, silently.
-  ///
-  ///     while (!q.try_push(make_value())) {  // NOT try_push(std::move(v))
-  ///       if (q.closed()) break;
-  ///     }
-  ///
-  /// A move-only value that cannot be re-created has no correct retry loop —
-  /// it is unrecoverable after a failed pass. Use blocking push().
+  /// retrying with the same object pushes a moved-from husk. See the README's
+  /// "Non-blocking loops" section for the worked idiom and its limits.
   /// @param value Element to enqueue, taken by value. An rvalue argument is
   ///   moved from at the call — including when the push fails, in which case
   ///   the value is discarded. An lvalue argument is copied and left intact.
@@ -95,8 +96,8 @@ class SpscQueue {
   [[nodiscard]] bool pop(T& out);
 
   /// Dequeues into out without blocking. Consumer side.
-  /// @param[out] out Receives the dequeued element on success; untouched on
-  ///   failure.
+  /// @param[out] out Receives the dequeued element on success; untouched on a
+  ///   false return; disturbed if T's move assignment throws (see Exceptions).
   /// @return false if the queue is empty.
   [[nodiscard]] bool try_pop(T& out);
 

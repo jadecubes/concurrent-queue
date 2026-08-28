@@ -63,7 +63,7 @@ between them on threading, not on behaviour.
 | **Loss** | Nothing accepted is dropped, duplicated, or reordered |
 | **Element type** | Any `T` that is `DefaultConstructible` and `MoveAssignable` — plus `noexcept` move assignment for `MpmcQueue`, which `static_assert`s it |
 | **Lifetime** | The queue must outlive every thread using it |
-| **Non-blocking loops** | `try_push`/`try_pop` return `false` for "not now" and "never again" alike; `closed()` is what lets a retry loop terminate |
+| **Non-blocking loops** | `try_push`/`try_pop` return `false` for "not now" and "never again" alike; `closed()` is what lets a retry loop terminate — [see below](#non-blocking-loops) |
 | **A throwing move** | The one place the three differ — see below |
 
 Every operation reports whether it succeeded, and every one is `[[nodiscard]]`.
@@ -78,6 +78,38 @@ sequence is never re-published, and every later operation on that slot spins
 forever. It therefore refuses such a `T` at compile time rather than degrading
 silently.
 
+### Non-blocking loops
+
+`try_push`/`try_pop` return `false` for "not now" and for "never again" alike,
+so a loop that only tests the return value never terminates after `close()`.
+`closed()` is the discriminator, and both sides have a trap.
+
+**Producer.** `try_push` is a by-value sink, so a failed attempt has already
+consumed an rvalue argument. Re-materialise it every pass:
+
+```cpp
+while (!q.try_push(make_value())) {   // NOT try_push(std::move(v))
+    if (q.closed()) break;
+}
+```
+
+A move-only value that cannot be re-created has no correct `try_push` loop at
+all — after one failed attempt it is gone. Blocking `push()` narrows the window
+to "closed" but does not close it: it too drops the value it was given.
+
+**Consumer.** Observing `closed()` is not the same as the queue being empty; a
+producer may have pushed between the failed `try_pop` and the check. Re-attempt
+once after observing it, which is what blocking `pop()` does internally:
+
+```cpp
+while (!q.try_pop(out)) {
+    if (q.closed() && !q.try_pop(out)) break;
+}
+```
+
+Or stop the producers before calling `close()` — the precondition `SpscQueue`
+and `MpmcQueue` already state, and which `MutexQueue` allows you to skip.
+
 ## The three queues
 
 They differ on one axis — **how many threads may touch each side** — and read
@@ -90,7 +122,7 @@ as a sequence of trades.
 | Exceeding that | — | **undefined behaviour, no diagnostic** | — |
 | Bounded wait (`try_push_for`) | yes | no | no |
 | Bulk ops (`try_push_n` / `try_pop_n`) | no | yes | no |
-| Throwing move assignment | survivable | survivable | rejected at compile time |
+| Throwing move assignment | survivable | survivable (single-element ops; bulk ops reject it) | rejected at compile time |
 | A blocked thread | sleeps | spins briefly, then sleeps | spins briefly, then sleeps |
 | Built from | mutex + condition variables | atomics only | atomics only |
 

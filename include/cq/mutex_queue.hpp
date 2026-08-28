@@ -33,7 +33,7 @@ namespace cq {
 /// count still reconciles. Element *values* are not protected: a failing
 /// push()/try_push() enqueues nothing, but a failing pop()/try_pop() leaves
 /// both out and the still-queued element in valid-but-unspecified states, so
-/// retrying the pop yields a hollowed element rather than the original. None
+/// retrying the pop may yield a hollowed element rather than the original. None
 /// of this is reachable for a T whose move assignment is noexcept.
 ///
 /// @tparam T Element type. Must be DefaultConstructible (ring slots are
@@ -56,21 +56,17 @@ class MutexQueue {
   /// @param value Element to enqueue, taken by value. An rvalue argument is
   ///   moved from at the call — including when the push fails, in which case
   ///   the value is discarded. An lvalue argument is copied and left intact.
-  /// @return false if the queue is closed (the value is dropped).
+  /// @return false if the queue is closed. The value is dropped: blocking
+  ///   push() narrows the window in which a move-only argument can be lost,
+  ///   but does not close it.
   [[nodiscard]] bool push(T value);
 
   /// Enqueues a value without blocking.
   ///
-  /// A retry loop must re-materialise its argument every pass: this is a
+  /// A retry loop must re-materialise its argument every pass — this is a
   /// by-value sink, so a failed attempt has already consumed an rvalue and
-  /// retrying with the same object pushes a moved-from husk, silently.
-  ///
-  ///     while (!q.try_push(make_value())) {  // NOT try_push(std::move(v))
-  ///       if (q.closed()) break;
-  ///     }
-  ///
-  /// A move-only value that cannot be re-created has no correct retry loop —
-  /// it is unrecoverable after a failed pass. Use blocking push().
+  /// retrying with the same object pushes a moved-from husk. See the README's
+  /// "Non-blocking loops" section for the worked idiom and its limits.
   /// @param value Element to enqueue, taken by value. An rvalue argument is
   ///   moved from at the call — including when the push fails, in which case
   ///   the value is discarded. An lvalue argument is copied and left intact.
@@ -84,8 +80,8 @@ class MutexQueue {
   [[nodiscard]] bool pop(T& out);
 
   /// Dequeues into out without blocking.
-  /// @param[out] out Receives the dequeued element on success; untouched on
-  ///   failure.
+  /// @param[out] out Receives the dequeued element on success; untouched on a
+  ///   false return; disturbed if T's move assignment throws (see Exceptions).
   /// @return false if the queue is empty.
   [[nodiscard]] bool try_pop(T& out);
 
@@ -110,8 +106,8 @@ class MutexQueue {
   /// and drains, or timeout elapses.
   /// @tparam Rep Arithmetic type of the timeout's tick count.
   /// @tparam Period std::ratio giving the timeout's tick period.
-  /// @param[out] out Receives the dequeued element on success; untouched on
-  ///   failure.
+  /// @param[out] out Receives the dequeued element on success; untouched on a
+  ///   false return; disturbed if T's move assignment throws (see Exceptions).
   /// @param timeout Longest time to wait. A non-positive timeout makes this
   ///   equivalent to try_pop().
   /// @return false if the timeout elapsed with the queue still empty, or
