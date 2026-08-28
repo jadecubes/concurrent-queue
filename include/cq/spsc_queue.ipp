@@ -10,9 +10,18 @@
 #include <limits>
 #include <span>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 namespace cq {
+
+// Both try_push_n and try_pop_n open with the same static_assert. Bulk
+// publishes one index for the whole batch, so a throw part-way through would
+// leave the moved elements outside both the caller's span and the queue (push)
+// or inside both (pop) — the only data loss or duplication anywhere in this
+// library. The single-element ops survive a throw and carry no such
+// requirement, which is why the check sits on those two bodies and not on the
+// class. The message cannot be factored out: C++20 requires a string literal.
 
 template <typename T>
 SpscQueue<T>::SpscQueue(std::size_t capacity) : buffer_(ring_slots(capacity)) {}
@@ -138,14 +147,8 @@ void SpscQueue<T>::dequeue(std::size_t head, T& out) {
 
 template <typename T>
 std::size_t SpscQueue<T>::try_push_n(std::span<T> items) {
-  // Bulk publishes one index for the whole batch, so a throw part-way through
-  // would leave the moved elements outside both the caller's span and the
-  // queue (push) or inside both (pop) — the only data loss or duplication
-  // anywhere in this library. The single-element ops survive a throw and do
-  // not carry this requirement.
   static_assert(std::is_nothrow_move_assignable_v<T>,
-                "SpscQueue bulk transfer requires a T whose move assignment is noexcept: "
-                "a throw mid-batch loses or duplicates elements");
+                "SpscQueue bulk transfer requires a noexcept move assignment");
   if (items.empty() || closed_.load(std::memory_order_relaxed)) {
     return 0;
   }
@@ -170,14 +173,8 @@ std::size_t SpscQueue<T>::try_push_n(std::span<T> items) {
 
 template <typename T>
 std::size_t SpscQueue<T>::try_pop_n(std::span<T> out) {
-  // Bulk publishes one index for the whole batch, so a throw part-way through
-  // would leave the moved elements outside both the caller's span and the
-  // queue (push) or inside both (pop) — the only data loss or duplication
-  // anywhere in this library. The single-element ops survive a throw and do
-  // not carry this requirement.
   static_assert(std::is_nothrow_move_assignable_v<T>,
-                "SpscQueue bulk transfer requires a T whose move assignment is noexcept: "
-                "a throw mid-batch loses or duplicates elements");
+                "SpscQueue bulk transfer requires a noexcept move assignment");
   if (out.empty()) {
     return 0;
   }

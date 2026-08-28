@@ -46,7 +46,8 @@ namespace cq {
 /// of this is reachable for a T whose move assignment is noexcept.
 ///
 /// @tparam T Element type. Must be DefaultConstructible (ring slots are
-///   constructed up front) and MoveAssignable.
+///   constructed up front) and MoveAssignable; try_push_n()/try_pop_n()
+///   additionally require a noexcept move assignment and static_assert it.
 template <typename T>
 // The "excessive padding" the analyzer flags is deliberate: head_ and tail_
 // each get a private cache line (see cq/cache_line.hpp).

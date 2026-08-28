@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -206,19 +207,26 @@ TYPED_TEST(QueueContract, NonBlockingRetryLoopsTerminateViaClosed) {
     ASSERT_LT(++spins, 1000) << "try_push loop never terminated";
   }
 
-  // The consumer idiom re-attempts after observing closed(): a producer may
-  // have pushed between the failed try_pop and the check, and breaking on
-  // closed() alone strands that element. Verified separately: the naive form
-  // exits with size() == 1.
-  int out = 0;
+  // The consumer drain loop from the README. The re-attempt after closed() is
+  // load-bearing twice over: breaking on closed() alone strands an element a
+  // producer pushed in the window, and breaking only when the re-attempt fails
+  // discards the one it just retrieved. Reaching the break here requires
+  // consulting closed(), so a closed() stuck at false trips the spin guard.
+  std::vector<int> drained;
   spins = 0;
-  while (!q.try_pop(out)) {
-    if (q.closed() && !q.try_pop(out)) {
-      break;
+  for (int item = 0;;) {
+    if (!q.try_pop(item)) {
+      if (!q.closed()) {
+        ASSERT_LT(++spins, 1000) << "try_pop loop never terminated";
+        continue;
+      }
+      if (!q.try_pop(item)) {
+        break;
+      }
     }
-    ASSERT_LT(++spins, 1000) << "try_pop loop never terminated";
+    drained.push_back(item);
   }
-  EXPECT_EQ(out, 1) << "the pre-close element must still drain";
+  EXPECT_EQ(drained, std::vector<int>{1}) << "the pre-close element must still drain";
   EXPECT_EQ(q.size(), 0U);
 }
 
