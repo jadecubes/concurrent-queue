@@ -26,26 +26,24 @@ namespace cq {
 /// snapshots — drive control flow off the push/pop return values instead,
 /// with one exception: try_push()/try_pop() return false for "not now" and
 /// for "never again" alike, so a non-blocking retry loop needs closed() to
-/// terminate. See try_push() for how such a loop must handle its argument.
+/// terminate.
 ///
 /// Lifetime: the queue must outlive both threads using it — call close() and
 /// join the producer/consumer before destruction. Destroying the queue while
 /// a thread is spinning in push()/pop() is undefined behavior.
 ///
-/// Exceptions: for the single-element operations, if T's move assignment
-/// throws the queue's own invariants hold — its indices do not move, so
-/// nothing is lost or duplicated and the element count still reconciles.
-/// Element *values* are not protected: a failing push()/try_push() enqueues
-/// nothing, but a failing pop()/try_pop() leaves both out and the
-/// still-queued element in valid-but-unspecified states, so retrying the pop
-/// may yield a hollowed element rather than the original. None of this is
-/// reachable for a T whose move assignment is noexcept.
+/// Exceptions: for single-element operations, if T's move assignment throws
+/// the indices do not move — nothing is lost or duplicated — but element
+/// values are not protected: a failed push() enqueues nothing, and a failed
+/// pop() leaves both out and the still-queued element valid-but-unspecified.
+/// Unreachable for a noexcept move assignment. try_push_n()/try_pop_n()
+/// publish one index per batch, so a throw part-way through would lose or
+/// duplicate elements; they static_assert a noexcept move assignment instead.
 ///
-/// try_push_n()/try_pop_n() cannot offer even the index guarantee: they
-/// publish one index for the whole batch, so a throw part-way through would
-/// strand the moved elements outside both the span and the queue, or inside
-/// both. They therefore static_assert a noexcept move assignment, which puts
-/// the whole paragraph above out of their reach by construction.
+/// Arguments: push operations take T by value. An rvalue argument is moved
+/// from at the call — even when the push fails, in which case the value is
+/// discarded. An lvalue argument is copied and left intact. A try_push()
+/// retry loop must therefore re-materialise its argument every pass.
 ///
 /// @tparam T Element type. Must be DefaultConstructible (ring slots are
 ///   constructed up front) and MoveAssignable; try_push_n()/try_pop_n()
@@ -71,25 +69,14 @@ class SpscQueue {
 
   /// Enqueues a value, waiting while the queue is full (brief spin, then a
   /// timed sleep — near-zero CPU while blocked). Producer side.
-  /// @param value Element to enqueue, taken by value. An rvalue argument is
-  ///   moved from at the call — including when the push fails, in which case
-  ///   the value is discarded. An lvalue argument is copied and left intact.
-  /// @return false if the queue is closed. The value is dropped: blocking
-  ///   push() narrows the window in which a move-only argument can be lost,
-  ///   but does not close it.
+  /// @param value Element to enqueue; see the class note on by-value arguments.
+  /// @return false if the queue is closed; the value is discarded.
   [[nodiscard]] bool push(T value);
 
   /// Enqueues a value without blocking. Producer side.
-  ///
-  /// A retry loop must re-materialise its argument every pass — this is a
-  /// by-value sink, so a failed attempt has already consumed an rvalue and
-  /// retrying with the same object pushes a moved-from husk. See the README's
-  /// "Non-blocking loops" section for the worked idiom and its limits.
-  /// @param value Element to enqueue, taken by value. An rvalue argument is
-  ///   moved from at the call — including when the push fails, in which case
-  ///   the value is discarded. An lvalue argument is copied and left intact.
-  /// @return false if the queue is full or closed; closed() tells them apart,
-  ///   and a retry loop needs it to terminate.
+  /// @param value Element to enqueue; see the class note on by-value arguments.
+  /// @return false if the queue is full or closed. closed() tells them apart;
+  ///   see the README's "Non-blocking loops" for the retry idiom.
   [[nodiscard]] bool try_push(T value);
 
   /// Dequeues into out, waiting while the queue is empty and open (brief

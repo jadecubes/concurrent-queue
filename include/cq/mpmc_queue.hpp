@@ -23,33 +23,29 @@ namespace cq {
 /// advisory snapshots — drive control flow off the push/pop return values
 /// instead, with one exception: try_push()/try_pop() return false for "not
 /// now" and for "never again" alike, so a non-blocking retry loop needs
-/// closed() to terminate. See try_push() for how such a loop must handle its
-/// argument.
+/// closed() to terminate.
 ///
 /// Lifetime: the queue must outlive every thread using it — call close() and
 /// join all producers/consumers before destruction. Destroying the queue
 /// while a thread is spinning in push()/pop() is undefined behavior.
 ///
-/// Exceptions: if T's move assignment throws while a slot is claimed, that
-/// slot's sequence is never re-published, and the queue does not merely
-/// degrade: the consumer can never advance past the stranded ticket, and the
-/// producer stops as soon as the ring wraps back onto it. Unlike the locked
-/// queue there is no way to return a claimed ticket. Use element types
-/// whose move assignment cannot throw — the static_assert below enforces
-/// it, because the damage is silent and unrecoverable.
+/// Exceptions: a throwing move assignment would strand a claimed ticket whose
+/// sequence is never re-published — the consumer can never advance past it and
+/// the producer stalls once the ring wraps onto it — with no way to return the
+/// ticket. A static_assert therefore requires a noexcept move assignment.
+///
+/// Arguments: push operations take T by value. An rvalue argument is moved
+/// from at the call — even when the push fails, in which case the value is
+/// discarded. An lvalue argument is copied and left intact. A try_push()
+/// retry loop must therefore re-materialise its argument every pass.
 ///
 /// @tparam T Element type. Must be DefaultConstructible (ring slots are
-///   constructed up front), MoveAssignable, and — unlike the other two
-///   queues — nothrow-MoveAssignable; see Exceptions above.
+///   constructed up front) and nothrow-MoveAssignable (see Exceptions).
 template <typename T>
 // The "excessive padding" the analyzer flags is deliberate: each position
 // counter gets a private cache line (see cq/cache_line.hpp).
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class MpmcQueue {
-  // Prose cannot enforce this and the failure is silent: a throwing move
-  // assignment leaves a claimed ticket whose sequence is never re-published,
-  // so try_push()/try_pop() report that slot full or empty forever and
-  // the blocking push()/pop() spin on it.
   static_assert(std::is_nothrow_move_assignable_v<T>,
                 "MpmcQueue requires a T whose move assignment is noexcept: a throw would "
                 "strand a claimed slot and permanently degrade the queue");
@@ -67,25 +63,14 @@ class MpmcQueue {
   MpmcQueue& operator=(MpmcQueue&&) = delete;
 
   /// Enqueues a value, spinning while the queue is full.
-  /// @param value Element to enqueue, taken by value. An rvalue argument is
-  ///   moved from at the call — including when the push fails, in which case
-  ///   the value is discarded. An lvalue argument is copied and left intact.
-  /// @return false if the queue is closed. The value is dropped: blocking
-  ///   push() narrows the window in which a move-only argument can be lost,
-  ///   but does not close it.
+  /// @param value Element to enqueue; see the class note on by-value arguments.
+  /// @return false if the queue is closed; the value is discarded.
   [[nodiscard]] bool push(T value);
 
   /// Enqueues a value without blocking.
-  ///
-  /// A retry loop must re-materialise its argument every pass — this is a
-  /// by-value sink, so a failed attempt has already consumed an rvalue and
-  /// retrying with the same object pushes a moved-from husk. See the README's
-  /// "Non-blocking loops" section for the worked idiom and its limits.
-  /// @param value Element to enqueue, taken by value. An rvalue argument is
-  ///   moved from at the call — including when the push fails, in which case
-  ///   the value is discarded. An lvalue argument is copied and left intact.
-  /// @return false if the queue is full or closed; closed() tells them apart,
-  ///   and a retry loop needs it to terminate.
+  /// @param value Element to enqueue; see the class note on by-value arguments.
+  /// @return false if the queue is full or closed. closed() tells them apart;
+  ///   see the README's "Non-blocking loops" for the retry idiom.
   [[nodiscard]] bool try_push(T value);
 
   /// Dequeues into out, spinning while the queue is empty and open.

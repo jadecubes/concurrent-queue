@@ -68,19 +68,13 @@ between them on threading, not on behaviour.
 
 Every operation reports whether it succeeded, and every one is `[[nodiscard]]`.
 
-**If `T`'s move assignment can throw**, that is where the three part company.
-`MutexQueue` and `SpscQueue` keep their indices intact — nothing is lost or
-duplicated, and the count still reconciles — but the element values are not
-protected: a failed pop leaves both the destination and the still-queued
-element in valid-but-unspecified states, so retrying may yield a hollowed
-element. `SpscQueue`'s bulk `try_push_n`/`try_pop_n` are the exception: they
-publish one index per batch, so they reject a throwing `T` at compile time
-rather than lose or duplicate elements mid-batch.
-`MpmcQueue` cannot survive it at all: a throw strands a claimed ticket whose
-sequence is never re-published, so `try_push`/`try_pop` report that slot full
-or empty forever and the blocking `push`/`pop` spin on it — the consumer never
-advances past the ticket, and the producer stops once the ring wraps onto it. It therefore refuses such a `T` at compile time rather than degrading
-silently.
+**If `T`'s move assignment can throw**, the three part company. `MutexQueue`
+and `SpscQueue` keep their indices intact — nothing lost or duplicated — but a
+failed pop leaves both the destination and the still-queued element
+valid-but-unspecified. `SpscQueue`'s bulk ops publish one index per batch and
+would lose or duplicate elements, so they reject a throwing `T` at compile
+time. `MpmcQueue` cannot survive a throw at all — it strands a claimed ticket
+and the queue stalls on it forever — so it rejects such a `T` at compile time.
 
 ### Non-blocking loops
 
@@ -118,30 +112,15 @@ for (T item;;) {
 }
 ```
 
-The re-attempt is load-bearing on all three, not defensive. `try_pop`,
-`closed()` and the second `try_pop` are three separate steps, and nothing makes
-them one — so breaking on `closed()` alone strands whatever arrived in the
-window, and a form that breaks only when the re-attempt *fails* is worse still:
-the element that attempt just retrieved is overwritten by the next loop
-condition.
-
-Measured on an Apple M2 Pro, Release, against a producer that pushes twice and
-then closes, per 400 trials — the ratio between the rows is the point, not the
-absolute counts, which move with the machine:
-
-| | break on `closed()` alone | the loop above |
-|---|---|---|
-| `MutexQueue` | 139–178 lost | 0 |
-| `SpscQueue` | 4–10 lost | 0 |
-| `MpmcQueue` | 2–6 lost | 0 |
-
-`MutexQueue` has the widest window by roughly thirty times, not the narrowest:
-the lock hand-off after its failed `try_pop` is long enough for the producer to
-complete both pushes *and* the close before the consumer reacquires. What it
-genuinely lacks is a different hazard — a push racing `close()` — which is why
-its `close()` carries no stop-producers-first precondition while `SpscQueue`'s
-and `MpmcQueue`'s do. For those two, the re-attempt is also what orders the
-consumer after the producer's last push.
+The re-attempt is load-bearing on all three. `try_pop`, `closed()` and the
+second `try_pop` are three separate steps — breaking on `closed()` alone
+strands whatever arrived between the first two, and breaking only when the
+re-attempt *fails* discards the element it just retrieved. `MutexQueue` is not
+exempt: the lock hand-off after a failed `try_pop` is a wide window, not a
+narrow one. What it lacks is a different hazard — a push racing `close()` —
+which is why its `close()` has no stop-producers-first precondition while the
+other two do. For those two, the re-attempt is also what orders the consumer
+after the producer's last push.
 
 ## The three queues
 

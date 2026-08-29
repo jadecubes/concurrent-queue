@@ -207,10 +207,7 @@ TYPED_TEST(QueueContract, NonBlockingRetryLoopsTerminateViaClosed) {
     ASSERT_LT(++spins, 1000) << "try_push loop never terminated";
   }
 
-  // The consumer drain loop from the README. The re-attempt after closed() is
-  // load-bearing twice over: breaking on closed() alone strands an element a
-  // producer pushed in the window, and breaking only when the re-attempt fails
-  // discards the one it just retrieved. Reaching the break here requires
+  // The consumer drain loop from the README. Reaching the break requires
   // consulting closed(), so a closed() stuck at false trips the spin guard.
   std::vector<int> drained;
   spins = 0;
@@ -259,16 +256,10 @@ TYPED_TEST(QueueContract, FailedPushConsumesRvaluesAndLeavesLvaluesIntact) {
   EXPECT_EQ(owned, nullptr) << "retrying with the same object would push a husk";
 }
 
-// A throwing move assignment is the one place the three queues genuinely
-// differ, so it gets its own suite. MutexQueue and SpscQueue survive it with
-// their indices intact; MpmcQueue cannot — a throw strands a claimed ticket
-// whose sequence is never re-published — which is why it static_asserts the
-// requirement instead of appearing here. That static_assert is its test.
-//
-// Nothing else in the suite can reach this path: every other T here has a
-// noexcept move assignment. The throw is armed by a counter rather than a flag
-// on the element, so the element enqueues normally and turns hostile only for
-// the dequeue.
+// MutexQueue and SpscQueue survive a throwing move assignment; MpmcQueue
+// static_asserts it away, so that assert is its test and it is absent here.
+// The throw is armed by a counter rather than a flag on the element, so the
+// element enqueues normally and turns hostile only for the dequeue.
 int g_moves_until_throw = -1;        // negative: never throw
 constexpr int kStolenMarker = -999;  // what a stolen-from value is left holding
 constexpr int kSentinel = 99;        // pre-loaded into out; the failed pop overwrites it

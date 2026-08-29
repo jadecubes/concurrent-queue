@@ -15,13 +15,9 @@
 
 namespace cq {
 
-// Both try_push_n and try_pop_n open with the same static_assert. Bulk
-// publishes one index for the whole batch, so a throw part-way through would
-// leave the moved elements outside both the caller's span and the queue (push)
-// or inside both (pop) — the only data loss or duplication anywhere in this
-// library. The single-element ops survive a throw and carry no such
-// requirement, which is why the check sits on those two bodies and not on the
-// class. The message cannot be factored out: C++20 requires a string literal.
+// The bulk ops static_assert a noexcept move assignment in their bodies, not
+// on the class, so SpscQueue<T> with a throwing T still compiles for
+// single-element use. Rationale is in the header's Exceptions paragraph.
 
 template <typename T>
 SpscQueue<T>::SpscQueue(std::size_t capacity) : buffer_(ring_slots(capacity)) {}
