@@ -36,8 +36,10 @@ target_link_libraries(cq INTERFACE Threads::Threads)
 add_library(cq_warnings INTERFACE)
 target_compile_options(cq_warnings INTERFACE
   $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Wpedantic -Wconversion>
-  # Validates Doxygen comments against signatures (clang-only).
-  $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wdocumentation>
+  # Validates Doxygen comments against signatures (clang-only). An error, not a
+  # warning, because STYLE.md promises the check is enforced — as a warning it
+  # exits 0 and a stale @param ships green.
+  $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wdocumentation -Werror=documentation>
   $<$<CXX_COMPILER_ID:MSVC>:/W4>)
 
 # Applied only to our own targets: instrumenting the FetchContent deps just

@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <type_traits>
 #include <vector>
 
 #include "cq/backoff.hpp"
@@ -20,25 +21,34 @@ namespace cq {
 /// Thread-safety: after construction, all member functions may be called
 /// concurrently from any number of threads. closed() and size() return
 /// advisory snapshots — drive control flow off the push/pop return values
-/// instead.
+/// instead, with one exception: try_push()/try_pop() return false for "not
+/// now" and for "never again" alike, so a non-blocking retry loop needs
+/// closed() to terminate.
 ///
 /// Lifetime: the queue must outlive every thread using it — call close() and
 /// join all producers/consumers before destruction. Destroying the queue
 /// while a thread is spinning in push()/pop() is undefined behavior.
 ///
-/// Exceptions: if T's move assignment throws while a slot is claimed, that
-/// slot's sequence is never re-published and the queue degrades (later
-/// operations on the slot spin); unlike the locked queue there is no way to
-/// return a claimed ticket. Use element types whose move assignment cannot
-/// throw.
+/// Exceptions: a throwing move assignment would strand a claimed ticket whose
+/// sequence is never re-published — the consumer can never advance past it and
+/// the producer stalls once the ring wraps onto it — with no way to return the
+/// ticket. A static_assert therefore requires a noexcept move assignment.
+///
+/// Arguments: push operations take T by value. An rvalue argument is moved
+/// from at the call — even when the push fails, in which case the value is
+/// discarded. An lvalue argument is copied and left intact. A try_push()
+/// retry loop must therefore re-materialise its argument every pass.
 ///
 /// @tparam T Element type. Must be DefaultConstructible (ring slots are
-///   constructed up front) and MoveAssignable.
+///   constructed up front) and nothrow-MoveAssignable (see Exceptions).
 template <typename T>
 // The "excessive padding" the analyzer flags is deliberate: each position
 // counter gets a private cache line (see cq/cache_line.hpp).
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class MpmcQueue {
+  static_assert(std::is_nothrow_move_assignable_v<T>,
+                "MpmcQueue requires a noexcept move assignment");
+
  public:
   /// @param capacity Fixed number of slots; never resized.
   /// @throws std::invalid_argument if capacity is 0.
@@ -52,13 +62,14 @@ class MpmcQueue {
   MpmcQueue& operator=(MpmcQueue&&) = delete;
 
   /// Enqueues a value, spinning while the queue is full.
-  /// @param value Element to enqueue; consumed even when the push fails.
-  /// @return false if the queue is closed (the value is dropped).
+  /// @param value Element to enqueue; see the class note on by-value arguments.
+  /// @return false if the queue is closed; the value is discarded.
   [[nodiscard]] bool push(T value);
 
   /// Enqueues a value without blocking.
-  /// @param value Element to enqueue; consumed even when the push fails.
-  /// @return false if the queue is full or closed.
+  /// @param value Element to enqueue; see the class note on by-value arguments.
+  /// @return false if the queue is full or closed. closed() tells them apart;
+  ///   see the README's "Non-blocking loops" for the retry idiom.
   [[nodiscard]] bool try_push(T value);
 
   /// Dequeues into out, spinning while the queue is empty and open.
@@ -67,8 +78,8 @@ class MpmcQueue {
   [[nodiscard]] bool pop(T& out);
 
   /// Dequeues into out without blocking.
-  /// @param[out] out Receives the dequeued element on success; untouched on
-  ///   failure.
+  /// @param[out] out Receives the dequeued element on success; untouched on a
+  ///   false return; disturbed if T's move assignment throws (see Exceptions).
   /// @return false if the queue is empty (including transiently, while a
   ///   producer has claimed the next slot but not yet published it).
   [[nodiscard]] bool try_pop(T& out);

@@ -23,18 +23,31 @@ namespace cq {
 /// try_push) and at most one thread the consumer side (pop, try_pop),
 /// concurrently with each other. close(), closed(), size(), and capacity()
 /// may be called from any thread. closed() and size() return advisory
-/// snapshots — drive control flow off the push/pop return values instead.
+/// snapshots — drive control flow off the push/pop return values instead,
+/// with one exception: try_push()/try_pop() return false for "not now" and
+/// for "never again" alike, so a non-blocking retry loop needs closed() to
+/// terminate.
 ///
 /// Lifetime: the queue must outlive both threads using it — call close() and
 /// join the producer/consumer before destruction. Destroying the queue while
 /// a thread is spinning in push()/pop() is undefined behavior.
 ///
-/// Exceptions: if T's move assignment throws, the failing push()/try_push()
-/// enqueues nothing and the failing pop()/try_pop() leaves the element
-/// queued — the queue itself stays consistent.
+/// Exceptions: for single-element operations, if T's move assignment throws
+/// the indices do not move — nothing is lost or duplicated — but element
+/// values are not protected: a failed push() enqueues nothing, and a failed
+/// pop() leaves both out and the still-queued element valid-but-unspecified.
+/// Unreachable for a noexcept move assignment. try_push_n()/try_pop_n()
+/// publish one index per batch, so a throw part-way through would lose or
+/// duplicate elements; they static_assert a noexcept move assignment instead.
+///
+/// Arguments: push operations take T by value. An rvalue argument is moved
+/// from at the call — even when the push fails, in which case the value is
+/// discarded. An lvalue argument is copied and left intact. A try_push()
+/// retry loop must therefore re-materialise its argument every pass.
 ///
 /// @tparam T Element type. Must be DefaultConstructible (ring slots are
-///   constructed up front) and MoveAssignable.
+///   constructed up front) and MoveAssignable; nothrow for the bulk ops (see
+///   Exceptions).
 template <typename T>
 // The "excessive padding" the analyzer flags is deliberate: head_ and tail_
 // each get a private cache line (see cq/cache_line.hpp).
@@ -56,13 +69,14 @@ class SpscQueue {
 
   /// Enqueues a value, waiting while the queue is full (brief spin, then a
   /// timed sleep — near-zero CPU while blocked). Producer side.
-  /// @param value Element to enqueue; consumed even when the push fails.
-  /// @return false if the queue is closed (the value is dropped).
+  /// @param value Element to enqueue; see the class note on by-value arguments.
+  /// @return false if the queue is closed; the value is discarded.
   [[nodiscard]] bool push(T value);
 
   /// Enqueues a value without blocking. Producer side.
-  /// @param value Element to enqueue; consumed even when the push fails.
-  /// @return false if the queue is full or closed.
+  /// @param value Element to enqueue; see the class note on by-value arguments.
+  /// @return false if the queue is full or closed. closed() tells them apart;
+  ///   see the README's "Non-blocking loops" for the retry idiom.
   [[nodiscard]] bool try_push(T value);
 
   /// Dequeues into out, waiting while the queue is empty and open (brief
@@ -72,8 +86,8 @@ class SpscQueue {
   [[nodiscard]] bool pop(T& out);
 
   /// Dequeues into out without blocking. Consumer side.
-  /// @param[out] out Receives the dequeued element on success; untouched on
-  ///   failure.
+  /// @param[out] out Receives the dequeued element on success; untouched on a
+  ///   false return; disturbed if T's move assignment throws (see Exceptions).
   /// @return false if the queue is empty.
   [[nodiscard]] bool try_pop(T& out);
 

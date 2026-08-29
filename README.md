@@ -49,8 +49,8 @@ entirely, which is only possible by giving something else up.
 
 ## The contract
 
-All three promise the same things. Choose between them on threading, not on
-behaviour.
+All three promise the same things, with one exception noted below. Choose
+between them on threading, not on behaviour.
 
 | | |
 |---|---|
@@ -61,10 +61,66 @@ behaviour.
 | **Shutdown** | `close()` refuses new items and wakes every waiter |
 | **Draining** | Items already queued still come out after `close()` |
 | **Loss** | Nothing accepted is dropped, duplicated, or reordered |
-| **Element type** | Any `T` that is `DefaultConstructible` and `MoveAssignable` |
+| **Element type** | Any `T` that is `DefaultConstructible` and `MoveAssignable` — plus `noexcept` move assignment for `MpmcQueue` and for `SpscQueue`'s bulk ops, both of which `static_assert` it |
 | **Lifetime** | The queue must outlive every thread using it |
+| **Non-blocking loops** | `try_push`/`try_pop` return `false` for "not now" and "never again" alike; `closed()` is what lets a retry loop terminate — [see below](#non-blocking-loops) |
+| **A throwing move** | The one place the three differ — see below |
 
 Every operation reports whether it succeeded, and every one is `[[nodiscard]]`.
+
+**If `T`'s move assignment can throw**, the three part company. `MutexQueue`
+and `SpscQueue` keep their indices intact — nothing lost or duplicated — but a
+failed pop leaves both the destination and the still-queued element
+valid-but-unspecified. `SpscQueue`'s bulk ops publish one index per batch and
+would lose or duplicate elements, so they reject a throwing `T` at compile
+time. `MpmcQueue` cannot survive a throw at all — it strands a claimed ticket
+and the queue stalls on it forever — so it rejects such a `T` at compile time.
+
+### Non-blocking loops
+
+`try_push`/`try_pop` return `false` for "not now" and for "never again" alike,
+so a loop that only tests the return value never terminates after `close()`.
+`closed()` is the discriminator, and both sides have a trap.
+
+**Producer.** `try_push` is a by-value sink, so a failed attempt has already
+consumed an rvalue argument. Re-materialise it every pass:
+
+```cpp
+while (!q.try_push(make_value())) {   // NOT try_push(std::move(v))
+    if (q.closed()) break;
+}
+```
+
+A move-only value that cannot be re-created has no correct `try_push` loop at
+all — after one failed attempt it is gone. Blocking `push()` narrows the window
+to "closed" but does not close it: it too drops the value it was given.
+
+**Consumer.** Observing `closed()` is not the same as the queue being empty: a
+producer may have pushed between the failed `try_pop` and the check. Re-attempt
+once after observing it, and take whatever that attempt gives — which is what
+`SpscQueue::pop`/`MpmcQueue::pop` do verbatim (`if (closed()) return
+try_pop(out);`). `MutexQueue::pop` reaches the same result differently, by
+resolving "closed and drained" under a single lock:
+
+```cpp
+for (T item;;) {
+    if (!q.try_pop(item)) {
+        if (!q.closed()) continue;      // not now — keep trying
+        if (!q.try_pop(item)) break;    // closed and drained
+    }
+    use(item);
+}
+```
+
+The re-attempt is load-bearing on all three. `try_pop`, `closed()` and the
+second `try_pop` are three separate steps — breaking on `closed()` alone
+strands whatever arrived between the first two, and breaking only when the
+re-attempt *fails* discards the element it just retrieved. `MutexQueue` is not
+exempt: the lock hand-off after a failed `try_pop` is a wide window, not a
+narrow one. What it lacks is a different hazard — a push racing `close()` —
+which is why its `close()` has no stop-producers-first precondition while the
+other two do. For those two, the re-attempt is also what orders the consumer
+after the producer's last push.
 
 ## The three queues
 
@@ -78,6 +134,7 @@ as a sequence of trades.
 | Exceeding that | — | **undefined behaviour, no diagnostic** | — |
 | Bounded wait (`try_push_for`) | yes | no | no |
 | Bulk ops (`try_push_n` / `try_pop_n`) | no | yes | no |
+| Throwing move assignment | survivable | survivable (single-element ops; bulk ops reject it) | rejected at compile time |
 | A blocked thread | sleeps | spins briefly, then sleeps | spins briefly, then sleeps |
 | Built from | mutex + condition variables | atomics only | atomics only |
 
