@@ -239,21 +239,13 @@ TYPED_TEST(QueueContract, FailedPushConsumesRvaluesAndLeavesLvaluesIntact) {
   EXPECT_FALSE(q.try_push(lvalue));
   EXPECT_EQ(lvalue, "still here") << "an lvalue argument is copied, not consumed";
 
-  std::string rvalue = "consumed";
-  EXPECT_FALSE(q.try_push(std::move(rvalue)));
-  // Reading a moved-from object is the assertion, not an accident. A
-  // moved-from std::string is only valid-but-unspecified by the standard, so
-  // this half is a libstdc++/libc++ observation; the unique_ptr case below is
-  // the one the standard actually guarantees.
-  // NOLINTNEXTLINE(bugprone-use-after-move)
-  EXPECT_TRUE(rvalue.empty()) << "an rvalue argument is moved from even on failure";
-
+  // unique_ptr is the one type whose moved-from state the standard pins down.
   typename TestFixture::MoveOnlyQueue mq(1);
   ASSERT_TRUE(mq.try_push(std::make_unique<int>(1)));
   auto owned = std::make_unique<int>(2);
   EXPECT_FALSE(mq.try_push(std::move(owned)));
   // NOLINTNEXTLINE(bugprone-use-after-move)
-  EXPECT_EQ(owned, nullptr) << "retrying with the same object would push a husk";
+  EXPECT_EQ(owned, nullptr) << "an rvalue argument is moved from even on failure";
 }
 
 // MutexQueue and SpscQueue survive a throwing move assignment; MpmcQueue

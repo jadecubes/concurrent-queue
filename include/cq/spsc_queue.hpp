@@ -46,8 +46,8 @@ namespace cq {
 /// retry loop must therefore re-materialise its argument every pass.
 ///
 /// @tparam T Element type. Must be DefaultConstructible (ring slots are
-///   constructed up front) and MoveAssignable; try_push_n()/try_pop_n()
-///   additionally require a noexcept move assignment and static_assert it.
+///   constructed up front) and MoveAssignable; nothrow for the bulk ops (see
+///   Exceptions).
 template <typename T>
 // The "excessive padding" the analyzer flags is deliberate: head_ and tail_
 // each get a private cache line (see cq/cache_line.hpp).

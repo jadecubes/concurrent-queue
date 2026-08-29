@@ -47,8 +47,7 @@ template <typename T>
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class MpmcQueue {
   static_assert(std::is_nothrow_move_assignable_v<T>,
-                "MpmcQueue requires a T whose move assignment is noexcept: a throw would "
-                "strand a claimed slot and permanently degrade the queue");
+                "MpmcQueue requires a noexcept move assignment");
 
  public:
   /// @param capacity Fixed number of slots; never resized.

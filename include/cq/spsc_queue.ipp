@@ -15,10 +15,6 @@
 
 namespace cq {
 
-// The bulk ops static_assert a noexcept move assignment in their bodies, not
-// on the class, so SpscQueue<T> with a throwing T still compiles for
-// single-element use. Rationale is in the header's Exceptions paragraph.
-
 template <typename T>
 SpscQueue<T>::SpscQueue(std::size_t capacity) : buffer_(ring_slots(capacity)) {}
 
@@ -143,6 +139,8 @@ void SpscQueue<T>::dequeue(std::size_t head, T& out) {
 
 template <typename T>
 std::size_t SpscQueue<T>::try_push_n(std::span<T> items) {
+  // In the body, not on the class: single-element use of a throwing T must
+  // still compile.
   static_assert(std::is_nothrow_move_assignable_v<T>,
                 "SpscQueue bulk transfer requires a noexcept move assignment");
   if (items.empty() || closed_.load(std::memory_order_relaxed)) {
