@@ -102,3 +102,12 @@ numbers above are ops/s; halve them for items transferred per second
 (SPSC ≈ 17.6M items/s, MPMC ≈ 10.2M).
 
 _v2 → v3 to follow._
+
+## Interactive tutorial
+
+[Passing an item (Q1)](tutorials/README.md) explores the v1 queue's waiting,
+argument ownership, close/drain and lifetime rules. From `tutorials/`, run
+`pnpm install --frozen-lockfile` then `pnpm dev`, and open
+[the local lesson](http://127.0.0.1:5173/?lesson=passing-an-item&v=1).
+The tutorial and its optional C++ witness build independently; Node is not
+required to use, build, test or benchmark the C++ library.

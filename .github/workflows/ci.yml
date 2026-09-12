@@ -66,3 +66,30 @@ jobs:
           cmake -B build-lint
           git ls-files '*.cpp' |
             xargs -r -P "$CMAKE_BUILD_PARALLEL_LEVEL" -n1 "clang-tidy-$CLANG_VERSION" -p build-lint
+
+  tutorial:
+    name: Tutorial (unit tests, build, accessibility and e2e)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tutorials
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: tutorials/pnpm-lock.yaml
+      - name: Install tutorial dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Tutorial unit tests
+        run: pnpm test
+      - name: Build tutorial
+        run: pnpm build
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Tutorial end-to-end and accessibility tests
+        run: pnpm test:e2e
