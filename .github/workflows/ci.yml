@@ -93,3 +93,10 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
       - name: Tutorial end-to-end and accessibility tests
         run: pnpm test:e2e
+      # The witness builds against include/cq but is not part of the library build, so it needs
+      # its own configure here; without it nothing in CI compiles or runs this file.
+      - name: Build and run the standalone C++ witness
+        run: |
+          cmake -B build-witness -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-witness
+          ctest --test-dir build-witness --output-on-failure --no-tests=error

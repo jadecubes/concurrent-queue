@@ -52,7 +52,7 @@ ctest --test-dir tutorials/build-tsan --output-on-failure
 
 The tiny standalone target includes `../include/cq`, uses C++20 and Threads, and has no GoogleTest or Node dependency. It witnesses full → blocked push → pop → resumed push, close/drain/FIFO, rejected rvalue consumption and lvalue preservation. Its `run_blocked` follows the repository test utility's timeout/unblock/collect pattern with an explicit thread join; a timeout observes non-completion, not entry into the condition variable. The CTest timeout prevents a broken implementation from hanging the test runner forever. It never executes destruction while a user is active.
 
-The top-level CMake files, library headers, existing tests, benchmarks and C++ CI jobs are untouched and do not depend on this directory. The existing lint glob will discover this new `.cpp` once committed: `examples/.clang-tidy` inherits the root checks and supplies C++20 plus `-Iinclude` for the root-directory invocation, since the root compilation database deliberately excludes this target. This is not an integration into the root CMake build.
+The top-level CMake files, library headers, existing tests, benchmarks and C++ CI jobs are untouched and do not depend on this directory. The witness is built and run by its own CI step, which configures this directory's CMake project and runs its single CTest case; that configure also writes the compilation database `examples/.clang-tidy` needs. The root lint job cannot see this file, because the root compilation database deliberately excludes the target, and clang-tidy skips a file it has no compile command for without failing. This is not an integration into the root CMake build.
 
 ## Source and learning evidence
 
