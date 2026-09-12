@@ -2,7 +2,7 @@
 
 A self-contained, six-question web tutorial for `cq::MutexQueue<Job>` at capacity 2. The implementation is pinned to **8c68e32**, on the **unmerged feat/mutex-queue branch**; v1 is not on `main` yet. This is a browser simulation of the source contract, not C++ execution.
 
-Node and pnpm are needed only for the web tutorial. The C++ library and the optional standalone C++ witness do not require Node.
+Node and pnpm are needed only for the web tutorial. The C++ library does not require Node.
 
 ## Run the tutorial
 
@@ -33,26 +33,23 @@ Playwright starts the production preview at port 4175 and checks desktop and Pix
 
 Displayed implementation and API contracts are `?raw` imports directly from `../include/cq/mutex_queue.ipp` and `.hpp`, sliced in `src/lessons/passingSource.ts`. There is no second copy of the library. The shown candidate retry/check-then-act call sites are question premises, not replacement implementations.
 
-## Optional standalone C++ witness — no Node required
+## What proves the C++ claims
 
-Requires CMake 3.24 or newer and a C++20 compiler with thread support.
+Every contract this lesson teaches is already asserted by the library's own GoogleTest suite,
+which CI runs under ThreadSanitizer on Linux and macOS:
 
-From the repository root:
+| Claim the lesson makes | Test that witnesses it |
+|---|---|
+| A full `push` waits, and resumes when a `pop` frees a slot | `PushBlocksUntilPopWhenFull`, `PopsInFifoOrder` |
+| An empty `pop` waits until a `push` arrives | `PopBlocksUntilPush` |
+| `close` refuses producers and lets consumers drain | `PushAfterCloseFails`, `PopDrainsRemainingItemsAfterClose` |
+| `close` wakes both kinds of waiter | `CloseWakesBlockedPop`, `CloseWakesBlockedPush` |
+| A failed `try_push` consumes an rvalue and leaves an lvalue intact | `FailedPushConsumesRvaluesAndLeavesLvaluesIntact` |
 
-```sh
-cmake -S tutorials -B tutorials/build -DCMAKE_BUILD_TYPE=Debug
-cmake --build tutorials/build
-ctest --test-dir tutorials/build --output-on-failure
-
-# Optional: ThreadSanitizer on supported Clang/GCC platforms
-cmake -S tutorials -B tutorials/build-tsan -DQ1_ENABLE_TSAN=ON -DCMAKE_BUILD_TYPE=Debug
-cmake --build tutorials/build-tsan
-ctest --test-dir tutorials/build-tsan --output-on-failure
-```
-
-The tiny standalone target includes `../include/cq`, uses C++20 and Threads, and has no GoogleTest or Node dependency. It witnesses full → blocked push → pop → resumed push, close/drain/FIFO, rejected rvalue consumption and lvalue preservation. Its `run_blocked` follows the repository test utility's timeout/unblock/collect pattern with an explicit thread join; a timeout observes non-completion, not entry into the condition variable. The CTest timeout prevents a broken implementation from hanging the test runner forever. It never executes destruction while a user is active.
-
-The top-level CMake files, library headers, existing tests, benchmarks and C++ CI jobs are untouched and do not depend on this directory. The witness is built and run by its own CI step, which configures this directory's CMake project and runs its single CTest case; that configure also writes the compilation database `examples/.clang-tidy` needs. The root lint job cannot see this file, because the root compilation database deliberately excludes the target, and clang-tidy skips a file it has no compile command for without failing. This is not an integration into the root CMake build.
+The tutorial adds no second C++ build. An earlier draft carried a standalone witness that
+re-asserted those same five facts against the same header; it was removed rather than kept in
+step by hand. The library headers, tests, benchmarks, root CMake and the existing C++ CI jobs
+are untouched, and nothing outside `tutorials/` depends on this directory.
 
 ## Source and learning evidence
 

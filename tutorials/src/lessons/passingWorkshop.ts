@@ -24,7 +24,6 @@ export interface QueueState {
   closed: boolean
   producer: { phase: Phase; item: Item | null }
   consumer: { phase: Phase }
-  mutexOwner: null
   nextId: number
   candidate: Item['payload']
   out: Item | null
@@ -38,25 +37,22 @@ export interface QueueState {
   log: Entry[]
 }
 export const operations: readonly Operation[] = ['push', 'try-push', 'try-rvalue', 'try-lvalue', 'pop', 'try-pop', 'close', 'destroy', 'resume-P', 'resume-C', 'finish-P', 'finish-C', 'join', 'other-push', 'size']
+// The eleven fixed labels are built once; only the four that name the job in flight depend on
+// state. simulate() calls this for every step, so rebuilding fourteen strings per call showed up.
+const fixedLabels: Partial<Record<Operation, string>> = {
+  'try-rvalue': 'P: try_push(std::move(j))', 'try-lvalue': 'P: try_push(j)',
+  pop: 'C: pop(out)', 'try-pop': 'C: try_pop(out)', close: 'O: close()', size: 'P: size()',
+  destroy: 'O: destroy the queue', 'resume-C': 'C: resume pending pop(out)',
+  'finish-P': 'P: finish all queue use', 'finish-C': 'C: finish all queue use',
+  join: 'O: join both finished users',
+}
 export function operationLabel(op: Operation, s: QueueState): string {
-  const labels: Record<Operation, string> = {
-    push: `P: push(job ${s.nextId})`,
-    'other-push': `P2: push(job ${s.nextId})`,
-    size: 'P: size()',
-    'try-push': `P: try_push(job ${s.nextId})`,
-    'try-rvalue': 'P: try_push(std::move(j))',
-    'try-lvalue': 'P: try_push(j)',
-    pop: 'C: pop(out)',
-    'try-pop': 'C: try_pop(out)',
-    close: 'O: close()',
-    destroy: 'O: destroy the queue',
-    'resume-P': `P: resume pending push(job ${s.producer.item?.id ?? '…'})`,
-    'resume-C': 'C: resume pending pop(out)',
-    'finish-P': 'P: finish all queue use',
-    'finish-C': 'C: finish all queue use',
-    join: 'O: join both finished users',
-  }
-  return labels[op]
+  const fixed = fixedLabels[op]
+  if (fixed) return fixed
+  if (op === 'push') return `P: push(job ${s.nextId})`
+  if (op === 'other-push') return `P2: push(job ${s.nextId})`
+  if (op === 'try-push') return `P: try_push(job ${s.nextId})`
+  return `P: resume pending push(job ${s.producer.item?.id ?? '…'})`
 }
 
 export function simulate(trace: readonly Operation[]): QueueState {
@@ -68,7 +64,7 @@ export function simulate(trace: readonly Operation[]): QueueState {
     closed: false,
     producer: { phase: 'ready', item: null },
     consumer: { phase: 'ready' },
-    mutexOwner: null,
+
     nextId: 1,
     candidate: 'job',
     out: null,
@@ -173,12 +169,15 @@ export function simulate(trace: readonly Operation[]): QueueState {
       const actor = op === 'finish-P' ? s.producer : s.consumer
       if (actor.phase !== 'ready') throw new Error('A pending call must return before its user can finish')
       actor.phase = 'finished'
+      entry.owner = op === 'finish-P' ? 'P' : 'C'
       entry.reason = 'This thread finishes; it will make no more queue accesses.'
     } else if (op === 'join') {
       if (s.producer.phase !== 'finished' || s.consumer.phase !== 'finished' || s.joined) throw new Error('Let both users finish first; then O can join them once')
       s.joined = true
+      entry.owner = 'O'
       entry.reason = 'O observes both thread completions by joining. The queue can now be destroyed.'
     } else {
+      entry.owner = 'O'
       if (s.producer.phase !== 'finished' || s.consumer.phase !== 'finished') {
         s.ub = 'Undefined behaviour: the queue is destroyed before every user has finished; a notified call is still pending.'
         entry.result = 'ub'
@@ -328,6 +327,5 @@ export function replay(events: readonly Event[]): WorkshopState {
   }
   return s
 }
-export const eventsThroughPassingTask = (events: readonly Event[], task: number) => eventsThroughTask(events, task)
 export const href = (events: readonly Event[]) => lessonHref('passing-an-item', '1', events)
 export const readLocation = (url: string) => readLessonLocation<Event>('passing-an-item', '1', url, replay)

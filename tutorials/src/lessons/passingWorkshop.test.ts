@@ -6,7 +6,6 @@ describe('the pinned queue contract', () => {
   it('releases the mutex while full, wakes on pop, then reuses the freed slot', () => {
     const waiting = simulate([...full, 'push'])
     expect(waiting.producer).toMatchObject({ phase: 'waiting', item: { id: 3 } })
-    expect(waiting.mutexOwner).toBeNull()
     const woken = simulate([...full, 'push', 'pop'])
     expect(woken.producer.phase).toBe('notified')
     expect(woken.slots.map(j => j?.id ?? null)).toEqual([null, 2])

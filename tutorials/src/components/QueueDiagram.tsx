@@ -25,7 +25,7 @@ export function QueueTimeline({ trace, id = 'queue-timeline' }: { trace: readonl
         <title id={`${id}-title`}>Thread order: numbered steps align with the operation log below</title>
         {actors.map((actor, i) => <g key={actor}><text x="2" y={22 + i * 31}>{actor}</text><line x1="25" y1={17 + i * 31} x2={trace.length * 66 + 30} y2={17 + i * 31} /></g>)}
         {s.log.map((entry, i) => {
-          const actor = entry.op === 'other-push' ? 'P2' : entry.op === 'size' ? 'P' : entry.op.includes('P') || entry.op.includes('push') || entry.op.startsWith('try-r') || entry.op.startsWith('try-l') ? 'P' : entry.op.includes('C') || entry.op.includes('pop') ? 'C' : 'O'
+          const actor = entry.owner ?? 'P'
           const y = 17 + actors.indexOf(actor) * 31
           return <g key={i}><circle cx={54 + i * 66} cy={y} r="12" /><text x={54 + i * 66} y={y + 4} textAnchor="middle" className="timeline-number">{i + 1}</text></g>
         })}

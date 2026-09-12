@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, type ReactNode, useState } from 'react'
 
 // Presentational pieces shared by every workshop lesson. They hold the page structure the
 // learner review settled on (CLAUDE.md, "Page structure the user accepted"); lessons supply words.
@@ -77,7 +77,7 @@ export function ProgressStrip({ tasks, live, viewing, onView, onNext }: { tasks:
   })}</ol>
 }
 
-export function LockedPreview({ id, index, tasks, liveTask, reuses, onBack }: { id: string; index: number; tasks: readonly Task[]; liveTask: number; reuses: string; onBack: () => void }) {
+export function LockedPreview({ id, index, tasks, liveTask, reuses, reusesFrom = 2, onBack }: { id: string; index: number; tasks: readonly Task[]; liveTask: number; reuses: string; reusesFrom?: number; onBack: () => void }) {
   const task = tasks[index]
   return <section className="workshop-preview" aria-labelledby={id}>
     <p className="kicker">Question {index + 1} of {tasks.length} · preview</p>
@@ -85,7 +85,7 @@ export function LockedPreview({ id, index, tasks, liveTask, reuses, onBack }: { 
     <p><strong>{task.question}</strong></p>
     <p>{task.instruction}</p>
     {/* Question 2 builds its own trace; only the prediction questions replay the one from question 1. */}
-    <p role="status" aria-label="Step status" className="workshop-preview-status">Locked: unlocks after question {index} is checked.{index >= 2 && ` It reuses the ${reuses} you build in question 1.`}</p>
+    <p role="status" aria-label="Step status" className="workshop-preview-status">Locked: unlocks after question {index} is checked.{index >= reusesFrom && ` It reuses the ${reuses} you build in question 1.`}</p>
     <button className="booking-primary" onClick={onBack}>Back to question {liveTask + 1}</button>
   </section>
 }
@@ -179,5 +179,13 @@ export function FullExample({ source, children }: { source: string; children: Re
 
 export const RESET_TASK_NOTICE = 'This task was reset. Earlier checked tasks are unchanged.'
 export const RESTART_NOTICE = 'Lesson restarted. No answers are retained.'
+export function LazyDetails({ className, summary, children }: { className?: string; summary: ReactNode; children: () => ReactNode }) {
+  const [opened, setOpened] = useState(false)
+  return <details className={className} onToggle={(event) => { if ((event.target as HTMLDetailsElement).open) setOpened(true) }}>
+    <summary>{summary}</summary>
+    {opened && children()}
+  </details>
+}
+
 export const DRY_RUN_PENDING_NOTE = 'On purpose, this dry run still shows the code from before this question’s change: that change is what you are asked to predict. It switches once you check.'
 export const SIMULATION_NOTE = 'Simulation: nothing runs on its own. Each button press runs one step of one thread.'

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { annotations, choices, guides, taskChoices, tasks } from '../lessons/passingContent'
-import { blockedReason, eventsThroughPassingTask, guided, href, initialTrace, operationLabel, readLocation, replay, simulate, type Event, type Operation } from '../lessons/passingWorkshop'
+import { eventsThroughTask } from '../lessons/workshopHistory'
+import { blockedReason, guided, href, initialTrace, operationLabel, readLocation, replay, simulate, type Event, type Operation } from '../lessons/passingWorkshop'
 import { header, implementation, lifetimeContract, ownershipContract, snapshotContract, sourceCode, taskCode } from '../lessons/passingSource'
 import { useWorkshopHistory } from './useWorkshopHistory'
 import { CodeListing, Controls, FullExample, GuidedStep, HowTo, LockedPreview, ProgressStrip, QuestionHeader, RESET_TASK_NOTICE, RESTART_NOTICE, SIMULATION_NOTE, SituationPanel, Takeaway } from './WorkshopShell'
@@ -100,7 +101,7 @@ const available: Record<string, readonly Operation[]> = { P: ['push', 'try-push'
 export function PassingWorkshop() {
   const { location, notice, viewing, setViewing, navigate, act } = useWorkshopHistory(readLocation, href, replay)
   const live = replay(location.events), readOnly = viewing !== null && viewing < live.task
-  const state = readOnly ? replay(eventsThroughPassingTask(location.events, viewing)) : live
+  const state = readOnly ? replay(eventsThroughTask(location.events, viewing)) : live
   const preview = viewing !== null && viewing > live.task ? viewing : null
   const task = tasks[state.task], guide = guides[state.task], answering = !!taskChoices[state.task]
   const reference = state.task === 2 ? state.reference.slice(0, state.reference.findIndex((op, i) => op === 'push' && simulate(state.reference.slice(0, i + 1)).producer.phase === 'waiting') + 1) : state.trace
@@ -182,6 +183,6 @@ export function PassingWorkshop() {
       {state.task === 5 && state.verdict?.ok && <Takeaway total={6} summary="A queue transfers jobs. Waiting, owning a payload, closing, and finishing its users are separate responsibilities." prompt="Explain why notification did not authorize destruction. Then explain how a failed try_push changes the caller’s ownership and how you would submit an irreplaceable job." checks="Look for: predicate recheck under the mutex; a by-value move before rejection; close refuses and drains; join establishes completion before storage ends. These automated checks do not establish learner comprehension." />}
       <FullExample source={implementation}><p>Real header-only implementation, imported directly from the repository at 8c68e32. Job moves in this model do not throw. The actual template’s exception and type restrictions are in the header below. No abort, automatic join, fairness or lock-free guarantee is provided.</p><details><summary>Full API header and restrictions</summary><pre tabIndex={0}><code>{header}</code></pre></details></FullExample>
     </>}
-    <footer className="queue-footer"><p>Local simulation · no C++ runs in your browser. The independent C++ witness is in tutorials/examples/q1_passing_an_item.cpp. This tutorial does not change the library build.</p><a href="https://github.com/jadecubes/concurrent-queue/blob/8c68e32/include/cq/mutex_queue.hpp">Pinned API source</a></footer>
+    <footer className="queue-footer"><p>Local simulation · no C++ runs in your browser. Every contract shown here is asserted by the library’s own test suite, which CI runs under ThreadSanitizer. This tutorial does not change the library build.</p><a href="https://github.com/jadecubes/concurrent-queue/blob/8c68e32/include/cq/mutex_queue.hpp">Pinned API source</a></footer>
   </main>
 }

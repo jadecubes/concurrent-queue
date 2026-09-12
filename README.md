@@ -109,5 +109,5 @@ _v2 → v3 to follow._
 argument ownership, close/drain and lifetime rules. From `tutorials/`, run
 `pnpm install --frozen-lockfile` then `pnpm dev`, and open
 [the local lesson](http://127.0.0.1:5173/?lesson=passing-an-item&v=1).
-The tutorial and its optional C++ witness build independently; Node is not
-required to use, build, test or benchmark the C++ library.
+Node is required only for the tutorial; it is not needed to use, build, test
+or benchmark the C++ library.

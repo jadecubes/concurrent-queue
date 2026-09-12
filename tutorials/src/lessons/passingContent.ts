@@ -58,6 +58,7 @@ export const choices = {
     feedback: 'P constructed the by-value parameter before checking capacity. That moved the payload out of j, even though the parameter was then discarded. False reports rejection, not preservation of j.'
   },
   'ownership-husk': {
+    correct: true,
     text: 'A moved-from j: the failed call already moved its payload into a discarded parameter.',
     feedback: 'P’s first failed try_push consumed the rvalue before it inspected size. The bool result returns no payload. After C pops, retrying the same j enqueues its moved-from state. Re-materialise every pass with try_push(make_job()), or use blocking push to wait for capacity. Blocking push can still discard the parameter on close.'
   },
@@ -78,6 +79,7 @@ export const choices = {
     feedback: 'Close first guarantees notification, not C running next. O can destroy before C reacquires mutex_ and reads size_. In this stated schedule C has not resumed, so the lifetime rule is violated.'
   },
   'lifetime-unsafe': {
+    correct: true,
     text: 'No: C’s pending pop still uses the queue. O must let C finish and join it before destruction.',
     feedback: 'O notified C, but C has not reacquired the mutex or returned from pop. Destroying now is undefined behaviour; the simulation stops here. Repair: close, let C resume and return false, finish every user, join them, then destroy. close neither joins nor forces that ordering.'
   },
@@ -90,6 +92,7 @@ export const choices = {
     feedback: 'P’s size() only reads size_ under its own lock. It neither changes tail_ nor reserves a slot. After it unlocks, the other producer can fill that slot.'
   },
   'snapshot-blocks': {
+    correct: true,
     text: 'Yes: the other producer fills the slot after size() unlocks, so P’s push sees a full queue and waits.',
     feedback: 'P’s size() returned 1 and released mutex_. The other producer then incremented size_ to 2. P’s later push acquires the mutex afresh, sees size == capacity, and waits in not_full_. size and closed are advisory snapshots, not a check-and-act transaction.'
   },
@@ -108,7 +111,11 @@ export const taskChoices: Record<number, readonly Choice[]> = {
   4: ['lifetime-joined', 'lifetime-returns-first', 'lifetime-unsafe', 'lifetime-twice'],
   5: ['snapshot-reserved', 'snapshot-blocks', 'snapshot-rejects', 'snapshot-race'],
 }
-export const correct: Record<number, Choice> = { 2: 'ownership-husk', 4: 'lifetime-unsafe', 5: 'snapshot-blocks' }
+// Each question's winning answer is the entry above that marks itself correct, so the id cannot
+// be listed here and be absent from the question's own choice list.
+export const correct: Record<number, Choice> = Object.fromEntries(
+  Object.entries(taskChoices).map(([task, ids]) => [Number(task), ids.find(id => 'correct' in choices[id])!]),
+) as Record<number, Choice>
 export const annotations = [
   { match: 'std::unique_lock lock', note: 'locks shared state; wait can release this lock' },
   { match: 'std::lock_guard lock', note: 'lock held only inside this scope' },

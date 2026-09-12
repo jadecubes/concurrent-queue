@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   base: './',
   // Raw teaching snippets come directly from ../include/cq.
-  server: { fs: { allow: ['..'] } },
+  server: { fs: { allow: ['.', '../include'] } },
   test: {
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',

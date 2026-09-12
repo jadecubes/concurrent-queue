@@ -1,5 +1,4 @@
 .booking-lesson { max-width: 980px; margin: 0 auto; padding: 28px clamp(16px, 4vw, 44px) 50px; }
-.masthead h1 { margin: 0; font-size: 1rem; }
 .booking-intro h2 { margin: 10px 0 18px; font-size: clamp(1.8rem, 4vw, 2.8rem); line-height: 1.15; letter-spacing: -.045em; }
 .booking-intro p { color: #c3d1d8; line-height: 1.7; font-size: .98rem; }
 .booking-lesson button { padding: 11px 15px; background: #182a35; color: #e3edf2; border: 1px solid #607984; border-radius: 7px; cursor: pointer; font-family: inherit; font-size: .85rem; font-weight: 600; line-height: 1.4; }
@@ -8,19 +7,6 @@
 .booking-stage { border: 1px solid #46616e; background: #101e27; border-radius: 12px; overflow: hidden; }
 .booking-stage-header { padding: 17px 22px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; border-bottom: 1px solid #304956; }
 .booking-stage-header span { color: #b0c4cc; font-size: .75rem; }
-.booking-diagram { padding: 22px; background-image: radial-gradient(#50697840 1px, transparent 1px); background-size: 22px 22px; }
-.booking-threads { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-.booking-thread { background: #142832; border-radius: 12px; padding: 16px; border: 2px solid #365460; }
-.booking-thread h3 { margin: 0 0 16px; color: var(--cyan); font-size: 1rem; }
-.booking-thread.whole-scope { border-style: dashed; border-color: #7eae61; }
-.booking-thread.owns-lock { border-style: solid; box-shadow: 0 0 0 3px #a5d87925; }
-.booking-shared { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 18px; border: 1px solid #738854; border-radius: 10px; background: #1b2d27; text-align: center; }
-.booking-shared > div > span { color: #d2dfc6; font-size: .79rem; }
-.booking-shared small { color: #b5c5bc; font-size: .73rem; display: block; margin-top: 8px; }
-.booking-count { display: block; font: 600 2rem/1.5 ui-monospace, monospace; color: var(--lime); }
-.booking-receipts > div { display: flex; gap: 10px; justify-content: center; margin-top: 8px; }
-.booking-receipt { width: 46px; height: 40px; display: grid; place-items: center; border: 1px dashed #889d8f; color: #b9cbbf; border-radius: 6px; transition: transform .4s, background .4s; }
-.booking-receipt.receipt-confirmed { transform: translateY(-3px); background: #40522b; border-style: solid; border-color: var(--lime); color: var(--lime); }
 .booking-lock { margin: 15px 0 0; text-align: center; color: #c0d0d8; font-size: .83rem; }
 .booking-failed .booking-shared { border-color: var(--red); background: #372129; }
 .booking-failed .booking-count { color: #ffb5ae; }
@@ -39,9 +25,6 @@
 .booking-details p { color: #b5cbd5; line-height: 1.7; font-size: .86rem; }
 .booking-details pre { font: .8rem/1.6 ui-monospace, monospace; overflow: auto; max-height: 440px; padding: 16px; background: #091016; color: #c5d4da; border: 1px solid #384e59; }
 .booking-link-error { background: #3b2920; border-left: 3px solid #eac186; padding: 16px; line-height: 1.6; }
-.core-preview-banner, .legacy-banner { padding: 16px 24px; border-bottom: 1px solid #3d535c; color: #c1d4dd; font-size: .85rem; line-height: 1.7; }
-.core-preview-footer { max-width: 890px; margin: 0 auto; padding: 0 24px 35px; color: #aabfc9; font-size: .83rem; line-height: 1.8; }
-.core-preview-footer a, .booking-details a, .legacy-banner a { color: var(--cyan); }
 @media (max-width: 600px) {
   .booking-diagram { padding: 14px 10px; }
   .booking-threads { gap: 8px; }
@@ -74,8 +57,6 @@
 .workshop-code { min-width: 0; padding: 16px; border: 1px solid #46616e; border-radius: 10px; background: #101e27; }
 .workshop-code h4, .workshop-trace h4 { margin: 0 0 10px; }
 .workshop-code p { color: #bbced7; font-size: .8rem; line-height: 1.6; }
-.workshop-unrevealed { border: 1px dashed #587585; padding: 24px; border-radius: 10px; color: #c7dbe5; line-height: 1.7; }
-.workshop-unrevealed h4 { margin-top: 0; }
 .workshop-stop { color: #e2d496; padding: 0 20px; line-height: 1.6; }
 .workshop-code pre { font: .79rem/1.65 ui-monospace, monospace; color: #dce8ed; overflow: auto; padding: 12px; background: #080f15; }
 .workshop .booking-thread h4 { color: var(--cyan); margin: 0; }
@@ -83,18 +64,6 @@
 .workshop .booking-thread small { display: block; margin-top: 10px; color: #bbced7; font-size: .73rem; line-height: 1.55; }
 .workshop .booking-thread button { width: 100%; margin-top: 14px; padding: 9px 6px; font-size: .76rem; }
 .workshop .booking-shared { margin-top: 18px; }
-.workshop-trace { margin: 20px 0; padding: 16px; border: 1px solid #405563; }
-.workshop-trace ol { display: flex; flex-wrap: wrap; gap: 10px 30px; padding-left: 22px; color: #c8dce5; font-size: .84rem; }
-.workshop-evidence { border: 1px solid #74905d; padding: 18px; margin: 18px 0; }
-.workshop-evidence legend { padding: 0 8px; font-weight: 600; }
-.workshop-evidence label { display: flex; align-items: center; gap: 12px; margin: 8px 0; padding: 10px 14px; border: 1px solid #3b5662; border-radius: 6px; background: #111d26; cursor: pointer; }
-.workshop-evidence label:hover { border-color: #72d6d0; }
-.workshop-evidence label:has(:checked) { border-color: var(--lime); background: #18261a; }
-.workshop-evidence label:has(:focus-visible) { outline: 2px solid #72d6d0; outline-offset: 2px; }
-.workshop-evidence input { width: 18px; height: 18px; margin: 0; accent-color: #cbf47d; flex: none; }
-.workshop-evidence label::after { content: 'select'; margin-left: auto; color: #84929b; font: 500 .64rem/1 ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; }
-.workshop-evidence label:has(:checked)::after { content: 'selected'; color: var(--lime); }
-.workshop-evidence p { color: #c1d3dd; font-size: .86rem; line-height: 1.6; }
 .workshop .booking-replay { padding-left: 0; padding-right: 0; }
 .workshop details summary { cursor: pointer; line-height: 1.6; }
 .workshop input:focus-visible, .workshop summary:focus-visible { outline: 3px solid var(--lime); outline-offset: 4px; }
@@ -133,14 +102,6 @@
   .workshop-guide td:nth-child(3)::before { content: 'Wrong when'; }
   .workshop-guide td:nth-child(4)::before { content: 'The bug it causes'; }
 }
-.thread-steps { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 8px; }
-.thread-steps li { display: grid; gap: 3px; padding: 8px 10px; border-radius: 6px; border: 1px dashed #365460; font-size: .8rem; color: #aebfc8; }
-.thread-steps li span { color: #c9d6dc; }
-.thread-steps li strong { font-weight: 600; color: #8fa2ab; }
-.thread-steps .step-done { border-style: solid; }
-.thread-steps .step-done strong { color: #e5c581; }
-.thread-steps .step-confirmed strong { color: var(--lime); }
-.thread-steps .step-declined strong { color: #f5b95e; }
 .booking-goal { margin: 0; padding: 12px 22px; border-bottom: 1px solid #304956; color: #c5f277; font-size: .86rem; font-weight: 600; }
 
 .code-listing { font: .8rem/1.6 ui-monospace, monospace; background: #091016; color: #c5d4da; border: 1px solid #384e59; padding: 12px 14px; overflow: auto; }
@@ -154,29 +115,6 @@
 .code-block[data-active] .code-note { color: #c5f277; }
 @media (max-width: 900px) { .code-block { grid-template-columns: 1fr; row-gap: 0; } .code-note:empty { display: none; } .code-note { padding-left: 1.5rem; } }
 .booking-legend { margin: 0; padding: 10px 22px 0; color: #a8bac3; font-size: .8rem; line-height: 1.5; }
-.booking-shared-title { grid-column: 1 / -1; margin: 0 0 2px; color: #d2dfc6; font: 500 .66rem/1.4 ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; text-align: left; }
-.booking-shared code { font: .7rem ui-monospace, monospace; color: #8fb3a6; margin-left: 6px; }
-.booking-shared .booking-lock { grid-column: 1 / -1; margin: 8px 0 0; text-align: left; }
-.trace-timeline { display: block; width: 100%; height: auto; margin: 12px 22px 0; max-width: calc(100% - 44px); }
-.trace-timeline text { font: 12px ui-sans-serif, system-ui, sans-serif; fill: #c3d1d8; }
-.trace-timeline .tl-axis { fill: #84929b; font-size: 11px; letter-spacing: .04em; }
-.trace-timeline .tl-slot-number { fill: #84929b; font: 600 11px ui-monospace, monospace; }
-.trace-timeline .tl-lane { font-weight: 650; fill: #72d6d0; }
-.trace-timeline .tl-slot-empty { fill: none; stroke: #2c4150; stroke-dasharray: 4 4; }
-.trace-timeline .tl-op { stroke-width: 1.5; }
-.trace-timeline .tl-op-check { fill: #13242e; stroke: #e5c581; }
-.trace-timeline .tl-op-confirmed { fill: #1b3024; stroke: #c5f277; }
-.trace-timeline .tl-op-declined { fill: #2a2a1e; stroke: #f5b95e; }
-.trace-timeline .tl-op-stale { fill: #372129; stroke: #ff7b72; }
-.trace-timeline .tl-op-text { font-size: 11px; fill: #eef4f7; }
-.trace-timeline .tl-op-sub { font-size: 9.5px; fill: #8fa2ab; }
-.trace-timeline .tl-hold { fill: #f5b95e; opacity: .8; }
-.trace-timeline .tl-hold-label { font-size: 9.5px; fill: #f5b95e; }
-.trace-timeline .tl-stale-bracket { fill: none; stroke: #ff7b72; stroke-width: 1.5; stroke-dasharray: 4 3; }
-.trace-timeline .tl-stale { fill: #ff7b72; font-size: 11px; font-weight: 600; }
-.trace-timeline .tl-count { font: 600 12px ui-monospace, monospace; fill: #c5f277; }
-.trace-timeline .tl-count-negative { fill: #ff7b72; }
-.trace-timeline .tl-empty { fill: #84929b; font-size: 12.5px; }
 @media (max-width: 600px) { .trace-timeline { margin: 10px 10px 0; max-width: calc(100% - 20px); } .trace-timeline text { font-size: 14px; } .trace-timeline .tl-op-text { font-size: 13px; } }
 .booking-howto { margin: 12px 22px 0; padding: 12px 16px 12px 34px; border: 1px solid #3c5360; border-radius: 8px; background: #0f1a22; color: #d6e2e8; font-size: .86rem; line-height: 1.6; display: grid; gap: 6px; }
 .booking-howto li::marker { color: #c5f277; font-weight: 700; }
@@ -184,108 +122,36 @@
 .booking-first-step { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 10px 22px 0; }
 .booking-first-step span { color: #a8bac3; font-size: .8rem; }
 .booking-first-step .booking-primary { background: var(--lime); color: #142115; border-color: var(--lime); }
-.dry-run { margin-top: 22px; padding: 20px 22px; border: 1px solid #3c5360; border-radius: 10px; background: #0f1a22; }
-.dry-run h3 { margin: 0 0 8px; font-size: 1.25rem; }
-.dry-run > p { color: #c3d1d8; line-height: 1.65; font-size: .9rem; }
-.dry-run-summary { font-weight: 600; color: #eef4f7; margin-top: 16px; }
-.dry-run-grid { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
-.dry-run-grid li { border: 1px solid #2c4150; border-radius: 8px; padding: 10px 12px; background: #111d26; }
-.dry-run-grid li strong { display: block; font-size: .8rem; color: #eef4f7; margin-bottom: 4px; }
-.dry-run-grid li p { margin: 6px 0 0; font-size: .8rem; line-height: 1.55; color: #c3d1d8; }
-.dry-run-grid .trace-timeline { margin: 0; max-width: 100%; }
-.dry-run-fail { border-color: #ff7b72; }
-.dry-run-fail p { color: #ff7b72; }
-.dry-run-safe { border-color: #c5f277; }
-.dry-run-safe p { color: #c5f277; }
-.dry-run-blocked p { color: #8fa2ab; }
-.dry-run-details { margin-top: 8px; }
-.dry-run-details summary { cursor: pointer; color: #72d6d0; font-size: .86rem; padding: 6px 0; }
-.dry-run-lesson { margin-top: 18px; padding-top: 14px; border-top: 1px solid #2c4150; color: #c5f277; font-weight: 600; }
 /* Ready looks like current: pressing it makes it current, so the look must not change. */
 .booking-lesson .workshop-progress .step-ready { border-color: var(--lime); color: var(--lime); }
 .workshop-progress .step-ready .step-title { color: #eef4f7; }
 .workshop-readonly-note { margin: 0 0 8px; padding: 6px 10px; border-left: 3px solid #72d6d0; color: #c3d1d8; font-size: .84rem; }
 .workshop-lead { color: #c5f277; font-size: .92rem; line-height: 1.65; border-left: 3px solid var(--lime); padding-left: 12px; }
-.dry-run-focus { margin: 16px 0 6px; font-size: 1.05rem; color: #eef4f7; }
-.dry-run-point { margin: 12px 0 0; color: #c5f277; font-weight: 600; line-height: 1.6; }
-.workshop-unrevealed .booking-howto { margin: 10px 0; }
-.workshop-unrevealed .trace-timeline { margin: 8px 0 0; max-width: 100%; }
 .booking-check-hint { order: 1; flex-basis: 100%; color: #84929b; font-size: .78rem; }
-.lifetime-timeline .tl-alive { fill: #72d6d0; }
-.lifetime-timeline .tl-op-wait { fill: #2a3548; stroke: #e2d496; stroke-dasharray: 4 3; }
-.module-row-code { font: 600 .7rem ui-monospace, monospace; letter-spacing: .08em; color: var(--cyan); }
-.core-nav-steps { max-width: var(--page-width); margin: 0 auto; padding: 0 clamp(16px, 4vw, 44px) 24px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.core-nav-steps a { color: var(--cyan); font-size: .9rem; }
-.core-nav-steps a.step-next:only-child { margin-left: auto; }
 
 /* F3 — the wait set band and shelf row in the waiting timeline. */
-.tl-waitset { fill: #7c6df2; }
-.tl-shelf { fill: #cfd6e4; font-size: 12px; }
-.waiting-timeline .tl-op-wait { fill: #2f2b52; stroke: #7c6df2; }
-.dry-run-list { display: grid; gap: 1.4rem; margin: 0; padding-left: 1.2rem; }
-.dry-run-list > li { min-width: 0; }
-.dry-run-list .timeline-scroll .trace-timeline { width: var(--timeline-width, 100%); max-width: none; margin: 0; }
-.dry-run-list > li > p { margin: 0 0 0.5rem; }
-.timeline-scroll { overflow-x: auto; }
 /* A scrollable region must be keyboard reachable, with focus you can see. */
-.timeline-scroll:focus-visible { outline: 2px solid #7c6df2; outline-offset: 3px; }
 /* The width comes from the component, which knows how many slots it drew; a fixed minimum here
    would rescale the diagram, magnifying a short trace and shrinking the long one that matters.
    Only inside the scroller does it become a minimum, so the reference and dry-run copies still
    scale to their own boxes. A timeline that publishes no --timeline-width keeps its normal
    width: the fallback is auto, because a percentage minimum outranks the base rule's
    max-width: calc(100% - 44px) and would manufacture a margin-wide scroll to nowhere. */
-.timeline-scroll .trace-timeline { min-width: var(--timeline-width, auto); }
 
 /* The module index. Three modules is a sequence, not a comparison grid: full-width rows read
    in order, and the face of each row carries only what choosing needs. The lesson's own
    introduction and questions live in a disclosure so the page stays a menu, not a wall. */
-.lesson-index { max-width: 900px; margin: 0 auto; padding: 30px clamp(16px, 4vw, 44px) 12px; }
-.lesson-index h2 { margin: 6px 0 10px; font-size: clamp(1.4rem, 3vw, 1.9rem); letter-spacing: -.01em; }
-.lesson-index-lead { max-width: 62ch; margin: 0 0 24px; color: #c3d1d8; font-size: .92rem; line-height: 1.65; }
-.module-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
-.module-row { padding: 16px 18px; border: 1px solid #2c4150; border-radius: 10px; background: #0f1a22; }
-.module-row:hover { border-color: var(--cyan); }
-.module-row-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
-.module-row-naming { flex: 1 1 320px; min-width: 0; }
-.module-row h3 { margin: 0; font-size: 1.06rem; line-height: 1.35; color: #eef4f7; }
-.module-row-summary { margin: 5px 0 0; color: #c3d1d8; font-size: .875rem; line-height: 1.5; }
 /* The one control on the row, so the eye has a single place to go. */
 .module-row-start { flex: 0 0 auto; align-self: center; padding: 8px 15px; border-radius: 7px;
   background: var(--lime); color: #142115; font-size: .84rem; font-weight: 650; text-decoration: none;
   white-space: nowrap; }
-.module-row-start:hover { filter: brightness(1.08); }
 .module-row-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
   margin: 12px 0 0; color: var(--muted); font-size: .76rem; }
 .module-row-bug { padding: 2px 8px; border-radius: 999px; border: 1px solid #4a3340;
   background: #2a1c22; color: var(--red); font-weight: 600; }
-.module-row-more { margin-top: 10px; border-top: 1px solid #22323d; padding-top: 9px; }
-.module-row-more summary { cursor: pointer; color: var(--cyan); font-size: .8rem; width: fit-content; }
-.module-row-more summary:focus-visible { border-radius: 4px; }
-.module-row-detail { padding-top: 12px; display: grid; gap: 14px; }
-.module-row-detail dl { margin: 0; display: grid; gap: 2px; }
-.module-row-detail dt, .module-row-questions h4 { font: 500 .67rem/1.4 'DM Mono', monospace; letter-spacing: .09em; text-transform: uppercase; }
-.module-row-detail dt { color: var(--cyan); }
-.module-row-detail dd { margin: 0 0 8px; color: #c3d1d8; font-size: .84rem; line-height: 1.6; }
-.module-row-detail dd:last-child { margin-bottom: 0; }
-.module-row-questions h4 { margin: 0 0 8px; color: var(--muted); }
-.module-row-questions ol { margin: 0; padding-left: 1.3em; display: grid; gap: 9px; }
-.module-row-questions li { color: #8fa2ab; }
-.module-question-title { display: block; color: #dbe6ec; font-size: .83rem; font-weight: 600; }
-.module-question-text { display: block; font-size: .78rem; line-height: 1.55; }
-.core-nav-home { max-width: var(--page-width); margin: 16px auto -6px; padding: 0 clamp(16px, 4vw, 44px); }
-.core-nav-home a { color: var(--cyan); font-size: .82rem; }
 @media (max-width: 600px) { .module-row-start { text-align: center; flex-basis: 100%; } }
 
 /* F4: long account/owner names need room beside the per-operation status. */
-.deadlock-workshop .booking-threads { grid-template-columns: minmax(0, 1fr); }
-.deadlock-workshop .booking-shared > div:last-child { grid-column: 1 / -1; text-align: left; }
-.deadlock-workshop .booking-count { font-size: 1.2rem; }
-.deadlock-timeline .tl-op-wait { fill: #2f2b52; stroke: #b4a7ff; }
-.deadlock-timeline { color: #e5c581; }
-.deadlock-state-table { width: calc(100% - 32px); margin: 16px; }
-.deadlock-state-table caption { text-align: left; color: #eef4f7; margin-bottom: 12px; }
-.deadlock-state-table tbody th { min-width: 0; }
 @media (max-width: 760px) {
   .deadlock-state-table td:nth-child(n)::before { content: none; }
 }
@@ -325,9 +191,6 @@ button, input, summary, [tabindex] { outline-offset: 4px; }
 .queue-figure text { fill: #dcebed; font: 12px ui-monospace,monospace; }
 .queue-figure .svg-heading { font: 600 15px ui-sans-serif,system-ui,sans-serif; }
 .queue-figure .slot-job { font-size: 17px; font-weight: bold; fill: #e1f5bd; }
-.slot-empty { fill: #13242e; stroke: #6e8995; stroke-dasharray: 5 3; }
-.slot-filled { fill: #2b4434; stroke: #b1d980; stroke-width: 2; }
-.wait-box { fill: #172933; stroke: #526d7a; }
 .queue-figure figcaption { color: #b6cbd3; font-size: .76rem; line-height: 1.6; padding: 4px 12px; }
 .queue-ub { background: #3e242c; }
 .queue-ledger { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin: 10px 20px; font: .77rem/1.7 ui-monospace,monospace; }
